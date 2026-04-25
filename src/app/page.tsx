@@ -42,6 +42,8 @@ export default function Home() {
   const turnLogsRef = useRef<any[]>([]);
   const [gameReview, setGameReview] = useState<any>(null);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyData, setHistoryData] = useState<any[]>([]);
 
   useEffect(() => {
     // Initialize engine on mount
@@ -149,6 +151,16 @@ export default function Home() {
     }
   };
 
+  const openHistoryModal = () => {
+    try {
+      const data = JSON.parse(localStorage.getItem('mahjong_history') || '[]');
+      setHistoryData(data);
+      setShowHistoryModal(true);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const getUkeireTooltip = (tile: string) => {
     if (!gameState || !gameState.candidates) return "";
     const cleanTile = tile.replace(/[\*\-\+\=\_]/g, '');
@@ -172,6 +184,66 @@ export default function Home() {
       {toastMessage && (
         <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-50 bg-blue-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-in fade-in slide-in-from-top-4">
           {toastMessage}
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistoryModal && (
+        <div className="absolute inset-0 bg-black/90 z-[60] flex items-center justify-center p-8 overflow-y-auto">
+          <div className="bg-gray-800 border border-gray-700 p-8 rounded-2xl max-w-4xl w-full shadow-2xl relative my-auto">
+            <button 
+              onClick={() => setShowHistoryModal(false)}
+              className="absolute top-6 right-6 text-gray-400 hover:text-white"
+            >
+              ✕ 閉じる
+            </button>
+            <h2 className="text-3xl font-bold text-blue-400 mb-6 border-b border-gray-700 pb-4">
+              学習記録（AI一致率の推移）
+            </h2>
+            
+            {historyData.length === 0 ? (
+              <p className="text-gray-400 text-center py-12">まだデータがありません。局を終了すると記録されます。</p>
+            ) : (
+              <div className="space-y-8">
+                {/* Growth Graph */}
+                <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 h-64 flex items-end gap-2 overflow-x-auto pb-4">
+                  {historyData.map((d: any, i: number) => {
+                    const matchRate = parseFloat(d.matchRate) || 0;
+                    const heightPercent = Math.max(5, matchRate);
+                    return (
+                      <div key={i} className="flex flex-col items-center flex-shrink-0 group relative w-12">
+                        <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none z-10">
+                          {d.kyoku}<br/>{matchRate}%
+                        </div>
+                        <div 
+                          className={`w-full rounded-t-sm transition-all duration-500 ${matchRate >= 80 ? 'bg-green-500' : matchRate >= 50 ? 'bg-blue-500' : 'bg-red-500'}`}
+                          style={{ height: `${heightPercent}%` }}
+                        ></div>
+                        <div className="text-[10px] text-gray-400 mt-2 truncate w-full text-center">
+                          {new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
+                     <h3 className="text-gray-300 font-bold mb-2 text-sm uppercase">平均一致率</h3>
+                     <p className="text-4xl font-bold text-blue-400">
+                       {Math.round(historyData.reduce((acc, curr) => acc + (parseFloat(curr.matchRate) || 0), 0) / historyData.length)}%
+                     </p>
+                  </div>
+                  <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
+                     <h3 className="text-gray-300 font-bold mb-2 text-sm uppercase">完了した局数</h3>
+                     <p className="text-4xl font-bold text-green-400">
+                       {historyData.length} 局
+                     </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -261,7 +333,7 @@ export default function Home() {
       )}
 
       {/* Left: Game Board */}
-      <div className="flex-1 flex flex-col items-center justify-between p-8 relative">
+      <div className="flex-1 flex flex-col items-center justify-between p-4 relative overflow-hidden">
         <div className="absolute top-4 left-4 bg-black/50 px-4 py-2 rounded-lg flex flex-col gap-2">
           <div className="text-xl font-bold text-white">{gameState.kyoku} - {gameState.honba}本場 - {gameState.turn}巡目</div>
           <div className="flex gap-4 text-sm font-semibold text-gray-300">
@@ -269,7 +341,7 @@ export default function Home() {
             <div className="flex items-center gap-1">
               ドラ: 
               <div className="flex gap-1 ml-1">
-                {gameState.dora.map((d, i) => (
+                {gameState.dora?.map((d, i) => (
                   <span key={i} className="bg-yellow-600 text-black px-1 rounded font-bold">{tileToText(d)}</span>
                 ))}
               </div>
@@ -304,7 +376,7 @@ export default function Home() {
         {/* Toimen */}
         <div className="w-full flex justify-center mt-12">
           <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
-            {gameState.kawa.toimen.map((t, i) => (
+            {gameState.kawa.toimen?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
                 {tileToText(t)}
               </div>
@@ -315,7 +387,7 @@ export default function Home() {
         {/* Center Field */}
         <div className="grid grid-cols-3 grid-rows-3 gap-8 items-center w-full max-w-md my-auto relative">
           <div className="col-start-1 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform -rotate-90 origin-center">
-             {gameState.kawa.kamicha.map((t, i) => (
+             {gameState.kawa.kamicha?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform rotate-90">
                 {tileToText(t)}
               </div>
@@ -330,7 +402,7 @@ export default function Home() {
             <div className="text-white text-lg font-bold mt-1">あなた: {gameState.defen[0]}</div>
           </div>
           <div className="col-start-3 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
-            {gameState.kawa.shimocha.map((t, i) => (
+            {gameState.kawa.shimocha?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform -rotate-90">
                 {tileToText(t)}
               </div>
@@ -341,7 +413,7 @@ export default function Home() {
         {/* Player Kawa */}
         <div className="w-full flex justify-center mb-8">
            <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
-            {gameState.kawa.player.map((t, i) => (
+            {gameState.kawa.player?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
                 {tileToText(t)}
               </div>
@@ -353,14 +425,15 @@ export default function Home() {
         <div className="w-full flex justify-center pb-4">
           <div className="flex gap-2 items-end">
             <div className="flex gap-1 bg-green-800/50 p-2 rounded-lg">
-              {gameState.tehai.map((t, i) => (
+              {gameState.tehai?.map((t, i) => (
                 <button
                   key={i}
                   title={getUkeireTooltip(t)}
                   onClick={() => handleDiscard(t)}
                   disabled={!gameState.tsumo || isEvaluating}
                   className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
-                    ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse' : 'bg-gray-100'}
+                    ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
+                      advice?.dangerousTiles?.includes(t) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
                     ${(!gameState.tsumo || isEvaluating) ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
                     ${pendingDiscard === t && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
                   `}
@@ -379,7 +452,8 @@ export default function Home() {
                   onClick={() => handleDiscard(gameState.tsumo!)}
                   disabled={isEvaluating}
                   className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
-                    ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse' : 'bg-gray-100'}
+                    ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
+                      advice?.dangerousTiles?.includes(gameState.tsumo) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
                     ${isEvaluating ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
                     ${pendingDiscard === gameState.tsumo && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
                   `}
@@ -400,7 +474,15 @@ export default function Home() {
         <div className="p-6 bg-gray-800 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
-            <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse" title="AI Online"></div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={openHistoryModal}
+                className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1.5 rounded-full font-bold transition-colors"
+              >
+                📊 記録
+              </button>
+              <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse" title="AI Online"></div>
+            </div>
           </div>
           
           {/* Mode Toggle */}

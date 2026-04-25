@@ -25,6 +25,8 @@ export interface GameState {
     kamicha: string[];
   };
   pendingAction?: any; // For Naki (fulou) options
+  zhuangfeng: string; // 場風 (e.g., "東")
+  menfeng: string;    // 自風 (e.g., "南")
 }
 
 // Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles
@@ -155,7 +157,7 @@ export class HumanPlayer extends Player {
     }
 
     // Check if Human can Tsumo
-    const canHule = this.allow_hule(zimo);
+    const canHule = this.allow_hule(this.shoupai, null, gangzimo);
     if (canHule) {
        this.pendingOptions = [{ type: 'hule' }];
     }
@@ -165,21 +167,29 @@ export class HumanPlayer extends Player {
   }
 
   action_dapai(dapai: any) {
-    if (this._callback) this._callback();
-    this.updateStateCallback();
-  }
+    if (dapai.l === this._menfeng) {
+      if (this._callback) this._callback();
+      this.updateStateCallback();
+      return;
+    }
 
-  action_fulou(fulou: any) {
     const options: { type: string, m?: string }[] = [];
-    const chi = this.get_chi_mianzi(fulou);
-    const peng = this.get_peng_mianzi(fulou);
-    const gang = this.get_gang_mianzi(fulou);
-    const hule = this.allow_hule(fulou);
+    const cleanP = dapai.p.replace(/[\*\-\+\=\_]/g, '');
+    const d = '_+=-'[(4 + dapai.l - this._menfeng) % 4];
+    const pWithDir = cleanP + d;
+    
+    if (dapai.l === (this._menfeng + 3) % 4) {
+      const chi = this.get_chi_mianzi(this.shoupai, pWithDir);
+      if (chi && chi.length > 0) options.push(...chi.map((m: string) => ({ type: 'chi', m })));
+    }
+    
+    const peng = this.get_peng_mianzi(this.shoupai, pWithDir);
+    const gang = this.get_gang_mianzi(this.shoupai, pWithDir);
+    const hule = this.allow_hule(this.shoupai, pWithDir, false);
 
     if (hule) options.push({ type: 'hule' });
-    if (peng && peng.length > 0) options.push(...peng.map(m => ({ type: 'peng', m })));
-    if (gang && gang.length > 0) options.push(...gang.map(m => ({ type: 'gang', m })));
-    if (chi && chi.length > 0) options.push(...chi.map(m => ({ type: 'chi', m })));
+    if (peng && peng.length > 0) options.push(...peng.map((m: string) => ({ type: 'peng', m })));
+    if (gang && gang.length > 0) options.push(...gang.map((m: string) => ({ type: 'gang', m })));
 
     if (options.length > 0) {
       this.pendingOptions = options;
@@ -187,6 +197,11 @@ export class HumanPlayer extends Player {
       return;
     }
 
+    if (this._callback) this._callback();
+    this.updateStateCallback();
+  }
+
+  action_fulou(fulou: any) {
     if (this._callback) this._callback();
     this.updateStateCallback();
   }
@@ -315,9 +330,11 @@ export class MahjongEngine {
         player: getKawa(0),
         shimocha: getKawa(1),
         toimen: getKawa(2),
-        kamicha: getKawa(3)
+        kamicha: getKawa(3),
       },
-      pendingAction: this.humanPlayer.pendingOptions
+      pendingAction: this.humanPlayer.pendingOptions,
+      zhuangfeng,
+      menfeng: ["東", "南", "西", "北"][humanMenfeng] || "東"
     };
   }
 }
