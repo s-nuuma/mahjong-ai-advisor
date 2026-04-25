@@ -64,3 +64,44 @@ ${gameState.candidates && gameState.candidates.slice(0, 5).map((c: any) =>
     };
   }
 }
+
+export async function getGameReview(logs: any[], gameState: any) {
+  const prompt = `
+あなたは麻雀のトッププロであり、熱血コーチです。
+たった今終了した局の全ターンの打牌ログを分析し、ユーザーの選択の良かった点、悪かった点、そして「最も勝負を分けたポイント」を解説してください。
+
+【局の情報】
+- 局: ${gameState.kyoku} ${gameState.honba}本場
+
+【打牌ログ (ターン別)】
+${logs.map((log, i) => `巡目 ${i+1}: ユーザー打 [${log.userDiscard}], AI推奨 [${log.aiDiscard}] ${log.userDiscard === log.aiDiscard ? '(一致)' : '(不一致)'}`).join('\n')}
+
+【出力フォーマット】
+以下のJSON形式のみで出力してください。
+{
+  "matchRate": "一致率（パーセント、数値のみ。例: 85）",
+  "reviewText": "局全体を通した解説文。一致しなかったターンの中で、どこが最も期待値を損ねていたか（あるいは独自の意図があったか）を具体的に長文で解説してください。マークダウンを使用して強調なども行って構いません。"
+}`;
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+      }
+    });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const resultText = response.text();
+    if (!resultText) {
+      throw new Error("No response from Gemini");
+    }
+    return JSON.parse(resultText);
+  } catch (error) {
+    console.error("Error calling Gemini Review API:", error);
+    return {
+      matchRate: 0,
+      reviewText: "レビューの生成に失敗しました。ログを確認してみましょう。"
+    };
+  }
+}
