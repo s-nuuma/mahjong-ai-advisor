@@ -11,6 +11,9 @@ export interface GameState {
   kyoku: string;
   honba: number;
   turn: number;
+  dora: string[];
+  shan: number;
+  defen: number[];
   tehai: string[];
   tsumo: string | null;
   currentShanten: number;
@@ -21,6 +24,7 @@ export interface GameState {
     toimen: string[];
     kamicha: string[];
   };
+  pendingAction?: any; // For Naki (fulou) options
 }
 
 // Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles
@@ -141,6 +145,8 @@ export class HumanPlayer extends Player {
     this.onGameEndCallback = onGameEndCallback;
   }
 
+  public pendingOptions: { type: string, m?: string }[] | null = null;
+
   action_zimo(zimo: any, gangzimo: boolean) {
     if (zimo.l !== this._menfeng) {
       if (this._callback) this._callback();
@@ -148,8 +154,13 @@ export class HumanPlayer extends Player {
       return;
     }
 
+    // Check if Human can Tsumo
+    const canHule = this.allow_hule(zimo);
+    if (canHule) {
+       this.pendingOptions = [{ type: 'hule' }];
+    }
+
     // Human Turn: do NOT call this._callback() automatically.
-    // Wait for userDiscard() to be called.
     this.updateStateCallback();
   }
 
@@ -158,7 +169,30 @@ export class HumanPlayer extends Player {
     this.updateStateCallback();
   }
 
+  action_fulou(fulou: any) {
+    const options: { type: string, m?: string }[] = [];
+    const chi = this.get_chi_mianzi(fulou);
+    const peng = this.get_peng_mianzi(fulou);
+    const gang = this.get_gang_mianzi(fulou);
+    const hule = this.allow_hule(fulou);
+
+    if (hule) options.push({ type: 'hule' });
+    if (peng && peng.length > 0) options.push(...peng.map(m => ({ type: 'peng', m })));
+    if (gang && gang.length > 0) options.push(...gang.map(m => ({ type: 'gang', m })));
+    if (chi && chi.length > 0) options.push(...chi.map(m => ({ type: 'chi', m })));
+
+    if (options.length > 0) {
+      this.pendingOptions = options;
+      this.updateStateCallback();
+      return;
+    }
+
+    if (this._callback) this._callback();
+    this.updateStateCallback();
+  }
+
   userDiscard(p: string) {
+    this.pendingOptions = null;
     if (this._callback) {
       const cb = this._callback;
       this._callback = null;
@@ -166,9 +200,19 @@ export class HumanPlayer extends Player {
     }
   }
 
+  userAction(actionType: string, m?: string) {
+    this.pendingOptions = null;
+    if (this._callback) {
+      const cb = this._callback;
+      this._callback = null;
+      if (actionType === 'hule') cb({ hule: '-' });
+      else if (actionType === 'skip') cb();
+      else cb({ fulou: m });
+    }
+  }
+
   action_kaiju(kaiju: any) { if (this._callback) this._callback(); }
   action_qipai(qipai: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
-  action_fulou(fulou: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
   action_gang(gang: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
   action_hule(hule: any) { 
     if (this._callback) this._callback(); 
@@ -260,6 +304,9 @@ export class MahjongEngine {
       kyoku,
       honba,
       turn: model.he && model.he[0] ? model.he[0]._pai.length + 1 : 1,
+      dora: model.shan && model.shan.baopai ? model.shan.baopai.map((p: string) => p.replace(/[\+\=\-\*\_]/g, '')) : [],
+      shan: model.shan ? model.shan.paishu : 70,
+      defen: model.defen || [25000, 25000, 25000, 25000],
       tehai,
       tsumo,
       currentShanten,
@@ -269,7 +316,8 @@ export class MahjongEngine {
         shimocha: getKawa(1),
         toimen: getKawa(2),
         kamicha: getKawa(3)
-      }
+      },
+      pendingAction: this.humanPlayer.pendingOptions
     };
   }
 }
