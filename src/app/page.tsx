@@ -42,6 +42,8 @@ export default function Home() {
   const turnLogsRef = useRef<any[]>([]);
   const [gameReview, setGameReview] = useState<any>(null);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyData, setHistoryData] = useState<any[]>([]);
 
   useEffect(() => {
     // Initialize engine on mount
@@ -149,6 +151,16 @@ export default function Home() {
     }
   };
 
+  const openHistoryModal = () => {
+    try {
+      const data = JSON.parse(localStorage.getItem('mahjong_history') || '[]');
+      setHistoryData(data);
+      setShowHistoryModal(true);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const getUkeireTooltip = (tile: string) => {
     if (!gameState || !gameState.candidates) return "";
     const cleanTile = tile.replace(/[\*\-\+\=\_]/g, '');
@@ -172,6 +184,66 @@ export default function Home() {
       {toastMessage && (
         <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-50 bg-blue-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-in fade-in slide-in-from-top-4">
           {toastMessage}
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistoryModal && (
+        <div className="absolute inset-0 bg-black/90 z-[60] flex items-center justify-center p-8 overflow-y-auto">
+          <div className="bg-gray-800 border border-gray-700 p-8 rounded-2xl max-w-4xl w-full shadow-2xl relative my-auto">
+            <button 
+              onClick={() => setShowHistoryModal(false)}
+              className="absolute top-6 right-6 text-gray-400 hover:text-white"
+            >
+              ✕ 閉じる
+            </button>
+            <h2 className="text-3xl font-bold text-blue-400 mb-6 border-b border-gray-700 pb-4">
+              学習記録（AI一致率の推移）
+            </h2>
+            
+            {historyData.length === 0 ? (
+              <p className="text-gray-400 text-center py-12">まだデータがありません。局を終了すると記録されます。</p>
+            ) : (
+              <div className="space-y-8">
+                {/* Growth Graph */}
+                <div className="bg-gray-900 p-6 rounded-xl border border-gray-700 h-64 flex items-end gap-2 overflow-x-auto pb-4">
+                  {historyData.map((d: any, i: number) => {
+                    const matchRate = parseFloat(d.matchRate) || 0;
+                    const heightPercent = Math.max(5, matchRate);
+                    return (
+                      <div key={i} className="flex flex-col items-center flex-shrink-0 group relative w-12">
+                        <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none z-10">
+                          {d.kyoku}<br/>{matchRate}%
+                        </div>
+                        <div 
+                          className={`w-full rounded-t-sm transition-all duration-500 ${matchRate >= 80 ? 'bg-green-500' : matchRate >= 50 ? 'bg-blue-500' : 'bg-red-500'}`}
+                          style={{ height: `${heightPercent}%` }}
+                        ></div>
+                        <div className="text-[10px] text-gray-400 mt-2 truncate w-full text-center">
+                          {new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
+                     <h3 className="text-gray-300 font-bold mb-2 text-sm uppercase">平均一致率</h3>
+                     <p className="text-4xl font-bold text-blue-400">
+                       {Math.round(historyData.reduce((acc, curr) => acc + (parseFloat(curr.matchRate) || 0), 0) / historyData.length)}%
+                     </p>
+                  </div>
+                  <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
+                     <h3 className="text-gray-300 font-bold mb-2 text-sm uppercase">完了した局数</h3>
+                     <p className="text-4xl font-bold text-green-400">
+                       {historyData.length} 局
+                     </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -402,7 +474,15 @@ export default function Home() {
         <div className="p-6 bg-gray-800 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
-            <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse" title="AI Online"></div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={openHistoryModal}
+                className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1.5 rounded-full font-bold transition-colors"
+              >
+                📊 記録
+              </button>
+              <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse" title="AI Online"></div>
+            </div>
           </div>
           
           {/* Mode Toggle */}
