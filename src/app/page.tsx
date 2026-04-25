@@ -31,6 +31,13 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const engineRef = useRef<MahjongEngine | null>(null);
 
+  // Correction Mode States
+  const [isCorrectionMode, setIsCorrectionMode] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [pendingDiscard, setPendingDiscard] = useState<string | null>(null);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   useEffect(() => {
     // Initialize engine on mount
     const engine = new MahjongEngine(() => {
@@ -40,11 +47,8 @@ export default function Home() {
     engineRef.current = engine;
     engine.start();
 
-    // Cleanup not strictly necessary for this simple wrapper, 
-    // but in a real app we'd want to stop the game loop
     return () => {
       if (engineRef.current && engineRef.current.game) {
-         // Stop the majiang-core game loop if needed
          if (typeof engineRef.current.game.stop === 'function') {
            engineRef.current.game.stop();
          }
@@ -58,18 +62,53 @@ export default function Home() {
     try {
       const result = await getMahjongAdvice(gameState);
       setAdvice(result);
+      return result;
     } catch (err) {
       console.error(err);
+      return null;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDiscard = (tile: string) => {
+  const executeDiscard = (tile: string) => {
     if (engineRef.current && engineRef.current.humanPlayer) {
       engineRef.current.humanPlayer.userDiscard(tile);
       setAdvice(null);
+      setPendingDiscard(null);
+      setShowCorrectionModal(false);
     }
+  };
+
+  const handleDiscard = async (tile: string) => {
+    if (!isCorrectionMode) {
+      executeDiscard(tile);
+      return;
+    }
+
+    // Correction Mode: Evaluate before discarding
+    setIsEvaluating(true);
+    setPendingDiscard(tile);
+    const result = await requestAdvice();
+    setIsEvaluating(false);
+
+    if (result && result.recommendedDiscard !== tile) {
+      setShowCorrectionModal(true);
+    } else {
+      // Perfect match or error
+      setToastMessage("ナイスな一打です！");
+      setTimeout(() => setToastMessage(null), 2000);
+      executeDiscard(tile);
+    }
+  };
+
+  const getUkeireTooltip = (tile: string) => {
+    if (!gameState || !gameState.candidates) return "";
+    const cleanTile = tile.replace(/[\*\-\+\=\_]/g, '');
+    const cand = gameState.candidates.find(c => c.p === cleanTile);
+    if (!cand) return "";
+    
+    return `打 ${tileToText(tile)}: ${cand.shanten === 0 ? 'テンパイ' : cand.shanten + 'シャンテン'}\n有効牌 ${cand.ukeireCount}枚 (${cand.ukeire.map(tileToText).join(', ')})`;
   };
 
   if (!gameState) {
@@ -82,6 +121,54 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-green-900 text-white font-sans overflow-hidden">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-50 bg-blue-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-in fade-in slide-in-from-top-4">
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Correction Modal */}
+      {showCorrectionModal && advice && (
+        <div className="absolute inset-0 bg-black/70 z-40 flex items-center justify-center">
+          <div className="bg-gray-800 border border-gray-700 p-8 rounded-2xl max-w-lg w-full shadow-2xl animate-in zoom-in-95">
+            <h2 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
+              <span className="text-3xl">✋</span> ちょっと待って！
+            </h2>
+            <div className="mb-6 space-y-4">
+              <p className="text-gray-200">
+                あなたの選択: <span className="font-bold text-xl ml-2">打 {tileToText(pendingDiscard!)}</span>
+              </p>
+              <div className="bg-blue-900/30 border border-blue-500/30 p-4 rounded-xl">
+                <p className="text-blue-300 text-sm font-semibold mb-1">AIの推奨打牌</p>
+                <p className="text-2xl font-bold text-white">打 {tileToText(advice.recommendedDiscard)}</p>
+              </div>
+              <div className="bg-gray-900/50 p-4 rounded-xl">
+                <p className="text-gray-400 text-sm font-semibold mb-1">AIの評価理由</p>
+                <p className="text-gray-200 text-sm leading-relaxed">{advice.reason}</p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={() => executeDiscard(pendingDiscard!)}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg transition-colors"
+              >
+                自分の意志を貫く
+              </button>
+              <button
+                onClick={() => {
+                  setShowCorrectionModal(false);
+                  setPendingDiscard(null);
+                }}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors"
+              >
+                考え直す
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Left: Game Board */}
       <div className="flex-1 flex flex-col items-center justify-between p-8 relative">
         <div className="absolute top-4 left-4 bg-black/50 px-4 py-2 rounded-lg flex flex-col gap-1">
@@ -141,26 +228,38 @@ export default function Home() {
               {gameState.tehai.map((t, i) => (
                 <button
                   key={i}
+                  title={getUkeireTooltip(t)}
                   onClick={() => handleDiscard(t)}
-                  disabled={!gameState.tsumo}
-                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2
+                  disabled={!gameState.tsumo || isEvaluating}
+                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
                     ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse' : 'bg-gray-100'}
-                    ${!gameState.tsumo ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
+                    ${(!gameState.tsumo || isEvaluating) ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
+                    ${pendingDiscard === t && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
                   `}
                 >
                   {tileToText(t)}
+                  {isCorrectionMode && gameState.tsumo && !isEvaluating && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  )}
                 </button>
               ))}
             </div>
             {gameState.tsumo && (
               <div className="ml-4 pl-4 border-l-2 border-white/20">
                 <button
+                  title={getUkeireTooltip(gameState.tsumo)}
                   onClick={() => handleDiscard(gameState.tsumo!)}
-                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2
+                  disabled={isEvaluating}
+                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
                     ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse' : 'bg-gray-100'}
+                    ${isEvaluating ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
+                    ${pendingDiscard === gameState.tsumo && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
                   `}
                 >
                   {tileToText(gameState.tsumo)}
+                  {isCorrectionMode && !isEvaluating && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  )}
                 </button>
               </div>
             )}
@@ -169,23 +268,55 @@ export default function Home() {
       </div>
 
       {/* Right: AI Advisor Sidebar */}
-      <div className="w-96 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl">
-        <div className="p-6 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
-          <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse" title="AI Online"></div>
+      <div className="w-96 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
+        <div className="p-6 bg-gray-800 border-b border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
+            <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse" title="AI Online"></div>
+          </div>
+          
+          {/* Mode Toggle */}
+          <div className="bg-gray-900 p-3 rounded-lg flex items-center justify-between border border-gray-700">
+            <span className="text-sm font-semibold text-gray-300">添削モード（中級者向け）</span>
+            <button
+              onClick={() => setIsCorrectionMode(!isCorrectionMode)}
+              className={`w-12 h-6 rounded-full transition-colors relative ${isCorrectionMode ? 'bg-blue-500' : 'bg-gray-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${isCorrectionMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
+            </button>
+          </div>
         </div>
         
-        <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6">
+        <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6 relative">
+          {/* Loading Overlay for Sidebar */}
+          {isEvaluating && (
+            <div className="absolute inset-0 bg-gray-900/80 z-10 flex items-center justify-center backdrop-blur-sm">
+               <div className="flex flex-col items-center gap-3">
+                 <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                 <span className="text-blue-400 font-bold animate-pulse">AIが打牌を評価中...</span>
+               </div>
+            </div>
+          )}
+
           {!advice ? (
              <div className="bg-gray-800 p-5 rounded-xl text-gray-300 border border-gray-700">
-               <p className="mb-4">現在の局面を分析しますか？</p>
-               <button 
-                  onClick={requestAdvice}
-                  disabled={isLoading || !gameState.tsumo}
-                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center"
-                >
-                  {isLoading ? '分析中...' : 'アドバイスを求める'}
-               </button>
+               {isCorrectionMode ? (
+                 <p className="text-sm">
+                   <span className="text-blue-400 font-bold">添削モードON:</span><br/>
+                   盤面の牌をクリックして打牌してください。AIがあなたの選択をリアルタイムに評価し、推奨と異なる場合のみ解説を行います。
+                 </p>
+               ) : (
+                 <>
+                   <p className="mb-4 text-sm">現在の局面を分析しますか？</p>
+                   <button 
+                      onClick={requestAdvice}
+                      disabled={isLoading || !gameState.tsumo}
+                      className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center"
+                    >
+                      {isLoading ? '分析中...' : 'アドバイスを求める'}
+                   </button>
+                 </>
+               )}
              </div>
           ) : (
             <div className="space-y-4 animate-in slide-in-from-right-4 fade-in duration-300">
@@ -198,7 +329,7 @@ export default function Home() {
 
               <div className="bg-gray-800 border border-gray-700 p-5 rounded-xl">
                 <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">理由</h3>
-                <p className="text-gray-100 leading-relaxed text-sm">
+                <p className="text-gray-100 leading-relaxed text-sm whitespace-pre-wrap">
                   {advice.reason}
                 </p>
               </div>
@@ -219,7 +350,7 @@ export default function Home() {
               {advice.dangerAlert && (
                 <div className="bg-red-900/30 border border-red-500/30 p-5 rounded-xl">
                   <h3 className="text-red-400 text-sm font-semibold uppercase tracking-wider mb-2">⚠ 注意点</h3>
-                  <p className="text-red-100 leading-relaxed text-sm">
+                  <p className="text-red-100 leading-relaxed text-sm whitespace-pre-wrap">
                     {advice.dangerAlert}
                   </p>
                 </div>
