@@ -33,4 +33,19 @@ describe('MahjongEngine', () => {
     expect(state.kawa.toimen).toEqual([]);
     expect(state.kawa.shimocha).toEqual([]);
   });
+
+  it('calculates shanten and discard candidates correctly', () => {
+    // 1-shanten hand
+    const hand = Shoupai.fromString('m11123p456s789z11z1');
+    const { calculateCandidates } = require('./mahjong-engine');
+    const candidates = calculateCandidates(hand);
+    
+    expect(candidates).toBeDefined();
+    expect(candidates.length).toBeGreaterThan(0);
+    
+    // Sort logic should put lowest shanten at index 0
+    const best = candidates[0];
+    expect(best.shanten).toBe(0); // If we discard something it might be tenpai (shanten 0)
+    expect(best.ukeire).toBeInstanceOf(Array);
+  });
 });

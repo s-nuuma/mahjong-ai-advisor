@@ -1,4 +1,11 @@
-import { Player, Game, Shoupai } from '@kobalab/majiang-core';
+import { Player, Game, Shoupai, Util } from '@kobalab/majiang-core';
+
+export interface DiscardCandidate {
+  p: string; // The tile to discard
+  shanten: number; // The shanten after discarding
+  ukeire: string[]; // The tiles that reduce this shanten
+  ukeireCount: number; // Number of available tiles (simple count max 4 - in hand)
+}
 
 export interface GameState {
   kyoku: string;
@@ -6,6 +13,8 @@ export interface GameState {
   turn: number;
   tehai: string[];
   tsumo: string | null;
+  currentShanten: number;
+  candidates: DiscardCandidate[];
   kawa: {
     player: string[];
     shimocha: string[];
@@ -14,7 +23,7 @@ export interface GameState {
   };
 }
 
-// Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles (e.g. ["m1", "m2", "m3", "p4", "p5", "s6", "z1"])
+// Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles
 export function parseTiles(paistr: string): string[] {
   const tiles: string[] = [];
   const suits = paistr.match(/[mpsz][\d\*\_]+/g);
@@ -28,6 +37,59 @@ export function parseTiles(paistr: string): string[] {
     }
   }
   return tiles;
+}
+
+export function calculateCandidates(shoupai: Shoupai): DiscardCandidate[] {
+  const candidates: DiscardCandidate[] = [];
+  const dapaiList = shoupai.get_dapai(); 
+  
+  if (!dapaiList || dapaiList.length === 0) return candidates;
+
+  const suits = ['m', 'p', 's', 'z'];
+
+  for (const discard of Array.from(new Set(dapaiList))) {
+    const cleanDiscard = discard.replace(/[\*\-\+\=\_]/g, '');
+    const s = shoupai.clone();
+    s.dapai(discard); 
+    
+    const shanten = Util.xiangting(s);
+    const ukeire: string[] = [];
+    
+    for (const suit of suits) {
+      const max = suit === 'z' ? 7 : 9;
+      for (let n = 1; n <= max; n++) {
+        const p = suit + n;
+        if (s._bingpai[suit][n] >= 4) continue;
+        
+        const testHand = s.clone();
+        try {
+          testHand.zimo(p);
+          if (Util.xiangting(testHand) < shanten) {
+            ukeire.push(p);
+          }
+        } catch (e) {
+          // ignore invalid zimo
+        }
+      }
+    }
+    
+    let ukeireCount = 0;
+    for (const p of ukeire) {
+      const suit = p[0];
+      const num = parseInt(p[1]);
+      ukeireCount += 4 - s._bingpai[suit][num];
+    }
+    
+    candidates.push({ p: cleanDiscard, shanten, ukeire, ukeireCount });
+  }
+  
+  // Sort candidates: lowest shanten first, then highest ukeireCount
+  candidates.sort((a, b) => {
+    if (a.shanten !== b.shanten) return a.shanten - b.shanten;
+    return b.ukeireCount - a.ukeireCount;
+  });
+  
+  return candidates;
 }
 
 export class CPUPlayer extends Player {
@@ -141,6 +203,8 @@ export class MahjongEngine {
     const humanMenfeng = this.humanPlayer._menfeng;
     let tehai: string[] = [];
     let tsumo: string | null = null;
+    let currentShanten = 8; // Default worst case
+    let candidates: DiscardCandidate[] = [];
     
     if (this.humanPlayer.shoupai) {
       const paistr = this.humanPlayer.shoupai.toString();
@@ -152,6 +216,14 @@ export class MahjongEngine {
          if (tsumoIndex !== -1) {
              tehai.splice(tsumoIndex, 1);
          }
+      }
+
+      currentShanten = Util.xiangting(this.humanPlayer.shoupai);
+      
+      // Calculate discard candidates only if it's the player's turn to discard (has tsumo or 14 tiles)
+      // Usually if tsumo exists, or length is 14
+      if (tsumo || tehai.length % 3 === 2) {
+        candidates = calculateCandidates(this.humanPlayer.shoupai);
       }
     }
 
@@ -180,6 +252,8 @@ export class MahjongEngine {
       turn: model.he && model.he[0] ? model.he[0]._pai.length + 1 : 1,
       tehai,
       tsumo,
+      currentShanten,
+      candidates,
       kawa: {
         player: getKawa(0),
         shimocha: getKawa(1),

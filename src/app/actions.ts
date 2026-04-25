@@ -20,6 +20,15 @@ export async function getMahjongAdvice(gameState: any) {
 - 上家の捨て牌: ${gameState.kawa.kamicha.join(', ')}
 - 下家の捨て牌: ${gameState.kawa.shimocha.join(', ')}
 
+【エンジンによる事前計算データ】
+- 現在のシャンテン数: ${gameState.currentShanten === 0 ? 'テンパイ' : gameState.currentShanten === -1 ? 'アガリ' : gameState.currentShanten + 'シャンテン'}
+- 打牌候補（受け入れ枚数順・上位のみ）:
+${gameState.candidates && gameState.candidates.slice(0, 5).map((c: any) => 
+  `  - 打 ${c.p}: ${c.shanten === 0 ? 'テンパイ' : c.shanten + 'シャンテン'} (有効牌 ${c.ukeireCount}枚: ${c.ukeire.join(', ')})`
+).join('\n')}
+
+※ あなたは上記の事前計算結果を踏まえて、必ずしも受け入れ枚数だけでなく、打点・スピード・安全度の総合的な期待値から最も優秀な一打を選んでください。
+
 【出力フォーマット】
 必ず以下のJSON形式のみで出力してください。Markdownのコードブロックは不要です。
 {

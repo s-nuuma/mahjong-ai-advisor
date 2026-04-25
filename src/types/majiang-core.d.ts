@@ -48,11 +48,19 @@ declare module '@kobalab/majiang-core' {
   export class Shoupai {
     constructor(qipai?: string[]);
     static fromString(paistr: string): Shoupai;
+    clone(): Shoupai;
     toString(): string;
     zimo(p: string): Shoupai;
     dapai(p: string): Shoupai;
     get_dapai(): string[];
     _zimo: string | null;
+    _bingpai: {
+      m: number[];
+      p: number[];
+      s: number[];
+      z: number[];
+      [key: string]: number[];
+    };
   }
 
   export class Game {
@@ -66,6 +74,10 @@ declare module '@kobalab/majiang-core' {
       player_id: number[];
       he: any[];
     };
+  }
+
+  export namespace Util {
+    export function xiangting(shoupai: Shoupai): number;
   }
 
   export function rule(): any;
