@@ -5,10 +5,39 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Ensure the API key is set in environment variables
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+// 外部エンジン（Mortal等）のAPIを呼び出すためのモック関数
+// 本稼働時はここを実際のMortalサーバーへのfetch処理に差し替えます
+async function fetchExternalAnalysis(gameState: any) {
+  // TODO: Replace with actual Mortal API call
+  // const res = await fetch("http://localhost:8000/analyze", { method: "POST", body: JSON.stringify(gameState) });
+  // return await res.json();
+
+  // ダミーの期待値(EV)計算
+  // シャンテン数が少なく、有効牌が多いほど高いEVになるようシミュレート
+  const evData = (gameState.candidates || []).map((c: any) => {
+    const base = 8 - c.shanten;
+    const ukeireBonus = c.ukeireCount * 0.1;
+    let ev = (base * 1.5) + ukeireBonus;
+    // 複雑なAIの揺らぎを模倣
+    ev += (Math.random() * 0.5 - 0.25);
+    return {
+      tile: c.p,
+      ev: Math.max(0, parseFloat(ev.toFixed(2)))
+    };
+  });
+
+  evData.sort((a: any, b: any) => b.ev - a.ev);
+  return evData;
+}
+
 export async function getMahjongAdvice(gameState: any) {
+  // 外部エンジンによる期待値(EV)解析を取得
+  const externalAnalysis = await fetchExternalAnalysis(gameState);
+  
   const prompt = `
-あなたは麻雀のトッププロであり、初心者の上達をサポートする優秀なコーチです。
-現在のゲーム状況を分析し、最も期待値が高く、かつ状況に適した「次の一打（推奨打牌）」を提案してください。
+あなたは麻雀のトッププロであり、AIの解析結果を人間にわかりやすく翻訳する優秀なコーチです。
+現在、外部の麻雀AIエンジン（Mortal等）が盤面を解析し、各打牌の期待値（EV）を算出しました。
+この期待値データを元に、「なぜその牌を切るべきと評価されたのか」「どのような狙いがあるのか」を論理的に解説してください。
 
 【現在の状況】
 - 局: ${gameState.kyoku} ${gameState.honba}本場
@@ -23,23 +52,20 @@ export async function getMahjongAdvice(gameState: any) {
 - 上家の捨て牌: ${gameState.kawa.kamicha.join(', ')}
 - 下家の捨て牌: ${gameState.kawa.shimocha.join(', ')}
 
-【エンジンによる事前計算データ】
-- 現在のシャンテン数: ${gameState.currentShanten === 0 ? 'テンパイ' : gameState.currentShanten === -1 ? 'アガリ' : gameState.currentShanten + 'シャンテン'}
-- 打牌候補（受け入れ枚数順・上位のみ）:
-${gameState.candidates && gameState.candidates.slice(0, 5).map((c: any) => 
-  `  - 打 ${c.p}: ${c.shanten === 0 ? 'テンパイ' : c.shanten + 'シャンテン'} (有効牌 ${c.ukeireCount}枚: ${c.ukeire.join(', ')})`
-).join('\n')}
+【外部AIエンジンによる解析データ (期待値上位)】
+${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${e.tile}: 期待値(EV) ${e.ev}`).join('\n')}
 
-※ あなたは上記の事前計算結果を踏まえて、必ずしも受け入れ枚数だけでなく、打点・スピード・安全度の総合的な期待値から最も優秀な一打を選んでください。
+※ あなたは上記の「外部AIの期待値が最も高い牌」を推奨打牌として採用し、その理由（受け入れ枚数、打点、安全度のバランスなど）を初心者にも分かりやすく言語化してください。
 
 【出力フォーマット】
 必ず以下のJSON形式のみで出力してください。Markdownのコードブロックは不要です。
 {
-  "recommendedDiscard": "打牌する牌（例: 9s）",
-  "reason": "なぜその牌を切るのかの論理的な理由",
+  "recommendedDiscard": "期待値が最も高い牌（例: 9s）",
+  "reason": "なぜ外部AIはその牌を最も高く評価したのか、その論理的な理由の解説",
   "targetYaku": ["狙うべき役のリスト"],
   "dangerousTiles": ["危険な牌のリスト（例: ['1m', '9p']）。ない場合は空配列"],
-  "dangerAlert": "注意点や守備に関するアドバイス。危険がない場合はnull"
+  "dangerAlert": "注意点や守備に関するアドバイス。危険がない場合はnull",
+  "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))} // 上位3件のEVデータをそのまま含めてください
 }`;
 
   try {
@@ -65,7 +91,8 @@ ${gameState.candidates && gameState.candidates.slice(0, 5).map((c: any) =>
       reason: "AIの解析に失敗しました。自力で最適な一打を考えてみましょう。",
       targetYaku: [],
       dangerousTiles: [],
-      dangerAlert: null
+      dangerAlert: null,
+      evData: []
     };
   }
 }
