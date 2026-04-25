@@ -143,6 +143,12 @@ export default function Home() {
     }
   };
 
+  const handleNakiAction = (actionType: string, m?: string) => {
+    if (engineRef.current && engineRef.current.humanPlayer) {
+      engineRef.current.humanPlayer.userAction(actionType, m);
+    }
+  };
+
   const getUkeireTooltip = (tile: string) => {
     if (!gameState || !gameState.candidates) return "";
     const cleanTile = tile.replace(/[\*\-\+\=\_]/g, '');
@@ -256,12 +262,44 @@ export default function Home() {
 
       {/* Left: Game Board */}
       <div className="flex-1 flex flex-col items-center justify-between p-8 relative">
-        <div className="absolute top-4 left-4 bg-black/50 px-4 py-2 rounded-lg flex flex-col gap-1">
+        <div className="absolute top-4 left-4 bg-black/50 px-4 py-2 rounded-lg flex flex-col gap-2">
           <div className="text-xl font-bold text-white">{gameState.kyoku} - {gameState.honba}本場 - {gameState.turn}巡目</div>
+          <div className="flex gap-4 text-sm font-semibold text-gray-300">
+            <div>残り: <span className="text-white">{gameState.shan}</span> 枚</div>
+            <div className="flex items-center gap-1">
+              ドラ: 
+              <div className="flex gap-1 ml-1">
+                {gameState.dora.map((d, i) => (
+                  <span key={i} className="bg-yellow-600 text-black px-1 rounded font-bold">{tileToText(d)}</span>
+                ))}
+              </div>
+            </div>
+          </div>
           <div className="text-sm font-semibold text-blue-300">
             {gameState.currentShanten === 0 ? 'テンパイ' : gameState.currentShanten === -1 ? 'アガリ' : `${gameState.currentShanten}シャンテン`}
           </div>
         </div>
+
+        {/* Naki (Pending Actions) Dialog */}
+        {gameState.pendingAction && gameState.pendingAction.length > 0 && (
+          <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 bg-gray-800/90 border border-gray-600 p-4 rounded-xl shadow-2xl flex gap-4 z-30 animate-in slide-in-from-bottom-4">
+            {gameState.pendingAction.map((action: any, i: number) => (
+              <button
+                key={i}
+                onClick={() => handleNakiAction(action.type, action.m)}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors"
+              >
+                {action.type === 'hule' ? 'ロン / ツモ' : action.type} {action.m && <span className="text-sm ml-2 opacity-80">{action.m}</span>}
+              </button>
+            ))}
+            <button
+              onClick={() => handleNakiAction('skip')}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg text-lg transition-colors"
+            >
+              スルー
+            </button>
+          </div>
+        )}
 
         {/* Toimen */}
         <div className="w-full flex justify-center mt-12">
@@ -283,8 +321,13 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <div className="col-start-2 row-start-2 text-center">
-            <h2 className="text-2xl font-bold opacity-50">Mahjong AI</h2>
+          <div className="col-start-2 row-start-2 flex flex-col items-center justify-center bg-green-900/80 p-4 rounded-full border-4 border-green-700 shadow-inner w-48 h-48">
+            <div className="text-gray-300 text-sm font-bold mb-1">対面: {gameState.defen[2]}</div>
+            <div className="flex w-full justify-between px-2 my-2 text-sm font-bold">
+              <span className="text-gray-300">上家: {gameState.defen[3]}</span>
+              <span className="text-gray-300">下家: {gameState.defen[1]}</span>
+            </div>
+            <div className="text-white text-lg font-bold mt-1">あなた: {gameState.defen[0]}</div>
           </div>
           <div className="col-start-3 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
             {gameState.kawa.shimocha.map((t, i) => (

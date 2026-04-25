@@ -22,6 +22,10 @@ declare module '@kobalab/majiang-core' {
     get shan(): any;
 
     get_dapai(shoupai: Shoupai): string[];
+    get_chi_mianzi(msg: any): string[];
+    get_peng_mianzi(msg: any): string[];
+    get_gang_mianzi(msg: any): string[];
+    allow_hule(msg: any): boolean;
     
     kaiju(kaiju: any): void;
     qipai(qipai: any): void;
