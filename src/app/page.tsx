@@ -261,7 +261,7 @@ export default function Home() {
       )}
 
       {/* Left: Game Board */}
-      <div className="flex-1 flex flex-col items-center justify-between p-8 relative">
+      <div className="flex-1 flex flex-col items-center justify-between p-4 relative overflow-hidden">
         <div className="absolute top-4 left-4 bg-black/50 px-4 py-2 rounded-lg flex flex-col gap-2">
           <div className="text-xl font-bold text-white">{gameState.kyoku} - {gameState.honba}本場 - {gameState.turn}巡目</div>
           <div className="flex gap-4 text-sm font-semibold text-gray-300">
@@ -269,7 +269,7 @@ export default function Home() {
             <div className="flex items-center gap-1">
               ドラ: 
               <div className="flex gap-1 ml-1">
-                {gameState.dora.map((d, i) => (
+                {gameState.dora?.map((d, i) => (
                   <span key={i} className="bg-yellow-600 text-black px-1 rounded font-bold">{tileToText(d)}</span>
                 ))}
               </div>
@@ -304,7 +304,7 @@ export default function Home() {
         {/* Toimen */}
         <div className="w-full flex justify-center mt-12">
           <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
-            {gameState.kawa.toimen.map((t, i) => (
+            {gameState.kawa.toimen?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
                 {tileToText(t)}
               </div>
@@ -315,7 +315,7 @@ export default function Home() {
         {/* Center Field */}
         <div className="grid grid-cols-3 grid-rows-3 gap-8 items-center w-full max-w-md my-auto relative">
           <div className="col-start-1 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform -rotate-90 origin-center">
-             {gameState.kawa.kamicha.map((t, i) => (
+             {gameState.kawa.kamicha?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform rotate-90">
                 {tileToText(t)}
               </div>
@@ -330,7 +330,7 @@ export default function Home() {
             <div className="text-white text-lg font-bold mt-1">あなた: {gameState.defen[0]}</div>
           </div>
           <div className="col-start-3 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
-            {gameState.kawa.shimocha.map((t, i) => (
+            {gameState.kawa.shimocha?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform -rotate-90">
                 {tileToText(t)}
               </div>
@@ -341,7 +341,7 @@ export default function Home() {
         {/* Player Kawa */}
         <div className="w-full flex justify-center mb-8">
            <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
-            {gameState.kawa.player.map((t, i) => (
+            {gameState.kawa.player?.map((t, i) => (
               <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
                 {tileToText(t)}
               </div>
@@ -353,7 +353,7 @@ export default function Home() {
         <div className="w-full flex justify-center pb-4">
           <div className="flex gap-2 items-end">
             <div className="flex gap-1 bg-green-800/50 p-2 rounded-lg">
-              {gameState.tehai.map((t, i) => (
+              {gameState.tehai?.map((t, i) => (
                 <button
                   key={i}
                   title={getUkeireTooltip(t)}
