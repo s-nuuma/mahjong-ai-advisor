@@ -1,5 +1,5 @@
 # ── Stage 1: akochan ビルドステージ ──────────────────────────────────
-# akochanはC++製のためソースからビルドする必要がある
+# OSを安定版の bookworm に固定
 FROM debian:bookworm-slim AS akochan-builder
 
 RUN apt-get update && apt-get install -y \
@@ -22,12 +22,13 @@ WORKDIR /build
 RUN make -f Makefile_Linux
 
 # ── Stage 2: FastAPI ランタイムステージ ───────────────────────────────
-FROM python:3.11-slim
+# Pythonイメージも bookworm ベースに固定
+FROM python:3.11-slim-bookworm
 
-# akochanの実行に必要なboostライブラリのみインストール
+# バージョン番号を固定せず、OS標準のランタイムライブラリをインストール
 RUN apt-get update && apt-get install -y \
-    libboost-system1.81.0 \
-    libboost-thread1.81.0 \
+    libboost-system-dev \
+    libboost-thread-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
