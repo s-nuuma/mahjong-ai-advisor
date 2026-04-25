@@ -132,11 +132,13 @@ export class CPUPlayer extends Player {
 
 export class HumanPlayer extends Player {
   private updateStateCallback: () => void;
+  private onGameEndCallback?: () => void;
 
-  constructor(id: number, updateStateCallback: () => void) {
+  constructor(id: number, updateStateCallback: () => void, onGameEndCallback?: () => void) {
     super();
     this._id = id;
     this.updateStateCallback = updateStateCallback;
+    this.onGameEndCallback = onGameEndCallback;
   }
 
   action_zimo(zimo: any, gangzimo: boolean) {
@@ -168,8 +170,16 @@ export class HumanPlayer extends Player {
   action_qipai(qipai: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
   action_fulou(fulou: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
   action_gang(gang: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
-  action_hule(hule: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
-  action_pingju(pingju: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
+  action_hule(hule: any) { 
+    if (this._callback) this._callback(); 
+    this.updateStateCallback(); 
+    if (this.onGameEndCallback) this.onGameEndCallback();
+  }
+  action_pingju(pingju: any) { 
+    if (this._callback) this._callback(); 
+    this.updateStateCallback(); 
+    if (this.onGameEndCallback) this.onGameEndCallback();
+  }
   action_jieju(paipu: any) { if (this._callback) this._callback(); this.updateStateCallback(); }
 }
 
@@ -177,8 +187,8 @@ export class MahjongEngine {
   public game: Game;
   public humanPlayer: HumanPlayer;
 
-  constructor(onStateChange: () => void) {
-    this.humanPlayer = new HumanPlayer(0, onStateChange);
+  constructor(onStateChange: () => void, onGameEnd?: () => void) {
+    this.humanPlayer = new HumanPlayer(0, onStateChange, onGameEnd);
     const cpu1 = new CPUPlayer(1, onStateChange);
     const cpu2 = new CPUPlayer(2, onStateChange);
     const cpu3 = new CPUPlayer(3, onStateChange);

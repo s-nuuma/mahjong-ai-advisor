@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getMahjongAdvice } from "./actions";
+import { getMahjongAdvice, getGameReview } from "./actions";
 import { MahjongEngine, GameState } from "@/lib/mahjong-engine";
 
 const tileToText = (tile: string) => {
@@ -38,11 +38,35 @@ export default function Home() {
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Review Mode States
+  const turnLogsRef = useRef<any[]>([]);
+  const [gameReview, setGameReview] = useState<any>(null);
+  const [isReviewing, setIsReviewing] = useState(false);
+
   useEffect(() => {
     // Initialize engine on mount
     const engine = new MahjongEngine(() => {
       // This callback is called by the engine whenever state updates
       setGameState(engine.getGameState());
+    }, async () => {
+      // onGameEnd callback
+      setIsReviewing(true);
+      const finalState = engine.getGameState();
+      const review = await getGameReview(turnLogsRef.current, finalState);
+      setGameReview(review);
+      try {
+         const history = JSON.parse(localStorage.getItem('mahjong_history') || '[]');
+         history.push({ 
+           date: new Date().toISOString(), 
+           kyoku: finalState.kyoku, 
+           matchRate: review.matchRate, 
+           logs: turnLogsRef.current 
+         });
+         localStorage.setItem('mahjong_history', JSON.stringify(history));
+      } catch(e) {
+         console.error("Failed to save history", e);
+      }
+      setIsReviewing(false);
     });
     engineRef.current = engine;
     engine.start();
@@ -71,8 +95,14 @@ export default function Home() {
     }
   };
 
-  const executeDiscard = (tile: string) => {
+  const executeDiscard = (tile: string, aiRecommendedTile?: string) => {
     if (engineRef.current && engineRef.current.humanPlayer) {
+      if (aiRecommendedTile) {
+        turnLogsRef.current.push({
+          userDiscard: tileToText(tile),
+          aiDiscard: tileToText(aiRecommendedTile)
+        });
+      }
       engineRef.current.humanPlayer.userDiscard(tile);
       setAdvice(null);
       setPendingDiscard(null);
@@ -82,7 +112,18 @@ export default function Home() {
 
   const handleDiscard = async (tile: string) => {
     if (!isCorrectionMode) {
+      const capturedState = gameState;
       executeDiscard(tile);
+      
+      // Asynchronously fetch AI advice to keep logs even in normal mode
+      if (capturedState) {
+        getMahjongAdvice(capturedState).then(res => {
+          turnLogsRef.current.push({
+             userDiscard: tileToText(tile),
+             aiDiscard: tileToText(res.recommendedDiscard)
+          });
+        });
+      }
       return;
     }
 
@@ -98,7 +139,7 @@ export default function Home() {
       // Perfect match or error
       setToastMessage("ナイスな一打です！");
       setTimeout(() => setToastMessage(null), 2000);
-      executeDiscard(tile);
+      executeDiscard(tile, result?.recommendedDiscard);
     }
   };
 
@@ -128,6 +169,50 @@ export default function Home() {
         </div>
       )}
 
+      {/* Game Review Modal */}
+      {(isReviewing || gameReview) && (
+        <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-8 overflow-y-auto">
+          <div className="bg-gray-800 border border-gray-700 p-8 rounded-2xl max-w-2xl w-full shadow-2xl my-auto">
+            <h2 className="text-3xl font-bold text-blue-400 mb-6 border-b border-gray-700 pb-4">
+              局後レビュー
+            </h2>
+            
+            {isReviewing ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-4">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-blue-300 font-bold animate-pulse">Geminiが対局ログを分析し、総括を作成しています...</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-gray-900 p-6 rounded-xl flex items-center justify-between border border-gray-700">
+                  <span className="text-xl text-gray-300 font-bold">AIとの打牌一致率</span>
+                  <div className="text-4xl font-bold text-green-400">{gameReview.matchRate}%</div>
+                </div>
+                
+                <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
+                  <h3 className="text-blue-300 font-bold mb-4 text-lg">💡 Geminiコーチからの総括</h3>
+                  <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                    {gameReview.reviewText}
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    setGameReview(null);
+                    turnLogsRef.current = [];
+                    // Reset game or allow user to start a new one
+                    window.location.reload(); 
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-colors text-lg"
+                >
+                  次の局へ（再スタート）
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Correction Modal */}
       {showCorrectionModal && advice && (
         <div className="absolute inset-0 bg-black/70 z-40 flex items-center justify-center">
@@ -150,7 +235,7 @@ export default function Home() {
             </div>
             <div className="flex gap-4">
               <button
-                onClick={() => executeDiscard(pendingDiscard!)}
+                onClick={() => executeDiscard(pendingDiscard!, advice.recommendedDiscard)}
                 className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg transition-colors"
               >
                 自分の意志を貫く
