@@ -25,6 +25,8 @@ export interface GameState {
     kamicha: string[];
   };
   pendingAction?: any; // For Naki (fulou) options
+  zhuangfeng: string; // 場風 (e.g., "東")
+  menfeng: string;    // 自風 (e.g., "南")
 }
 
 // Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles
@@ -328,9 +330,11 @@ export class MahjongEngine {
         player: getKawa(0),
         shimocha: getKawa(1),
         toimen: getKawa(2),
-        kamicha: getKawa(3)
+        kamicha: getKawa(3),
       },
-      pendingAction: this.humanPlayer.pendingOptions
+      pendingAction: this.humanPlayer.pendingOptions,
+      zhuangfeng,
+      menfeng: ["東", "南", "西", "北"][humanMenfeng] || "東"
     };
   }
 }

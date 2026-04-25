@@ -360,7 +360,8 @@ export default function Home() {
                   onClick={() => handleDiscard(t)}
                   disabled={!gameState.tsumo || isEvaluating}
                   className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
-                    ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse' : 'bg-gray-100'}
+                    ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
+                      advice?.dangerousTiles?.includes(t) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
                     ${(!gameState.tsumo || isEvaluating) ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
                     ${pendingDiscard === t && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
                   `}
@@ -379,7 +380,8 @@ export default function Home() {
                   onClick={() => handleDiscard(gameState.tsumo!)}
                   disabled={isEvaluating}
                   className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
-                    ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse' : 'bg-gray-100'}
+                    ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
+                      advice?.dangerousTiles?.includes(gameState.tsumo) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
                     ${isEvaluating ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
                     ${pendingDiscard === gameState.tsumo && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
                   `}
