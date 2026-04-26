@@ -3,25 +3,57 @@
 import { useState, useEffect, useRef } from "react";
 import { getMahjongAdvice, getGameReview } from "./actions";
 import { MahjongEngine, GameState } from "@/lib/mahjong-engine";
+import { YakuListTab } from "@/components/YakuListTab";
+import { AdviceTab } from "@/components/AdviceTab";
+import { SujiTab } from "@/components/SujiTab";
+
+const getTileImageUrl = (tile: string) => {
+  if (!tile) return "/images/tiles/back.svg";
+  const t = tile.replace(/_|\*/g, ""); 
+  if (t === "?") return "/images/tiles/back.svg";
+  return `/images/tiles/${t}.svg`;
+};
 
 const tileToText = (tile: string) => {
-  // majiang-core format: m1, p5, s9, z1
-  const suitMap: Record<string, string> = { m: "萬", p: "筒", s: "索" };
-  const zMap: Record<string, string> = { "1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "発", "7": "中" };
-  
   if (!tile || tile.length < 2) return tile;
-  
   const suit = tile[0];
-  const num = tile[1];
+  let num = parseInt(tile[1]);
+  if (isNaN(num)) return tile;
   
-  if (suitMap[suit]) {
-    // 0 is aka-dora (red 5)
-    return (num === "0" ? "5" : num) + suitMap[suit];
-  }
-  if (suit === "z" && zMap[num]) {
-    return zMap[num];
+  if (num === 0) num = 5; // Aka-dora
+
+  if (suit === 'm') return String.fromCodePoint(0x1F007 + num - 1);
+  if (suit === 's') return String.fromCodePoint(0x1F010 + num - 1);
+  if (suit === 'p') return String.fromCodePoint(0x1F019 + num - 1);
+  if (suit === 'z') {
+    const zMap: Record<number, number> = {
+      1: 0x1F000, 2: 0x1F001, 3: 0x1F002, 4: 0x1F003,
+      5: 0x1F006, 6: 0x1F005, 7: 0x1F004
+    };
+    return zMap[num] ? String.fromCodePoint(zMap[num]) : tile;
   }
   
+  return tile;
+};
+
+// Tooltip用：「5m」「3p」「9s」「東」のような略称ラベルに変換
+const tileToLabel = (tile: string): string => {
+  if (!tile || tile.length < 2) return tile;
+  const clean = tile.replace(/[\*_\-\+\=]/g, '');
+  const suit = clean[0];
+  let num = parseInt(clean[1]);
+  if (isNaN(num)) return tile;
+  if (num === 0) num = 5; // 赤ドラ
+
+  if (suit === 'm' || suit === 'p' || suit === 's') return `${num}${suit}`;
+
+  if (suit === 'z') {
+    const zLabel: Record<number, string> = {
+      1: '東', 2: '南', 3: '西', 4: '北',
+      5: '白', 6: '發', 7: '中'
+    };
+    return zLabel[num] ?? tile;
+  }
   return tile;
 };
 
@@ -29,6 +61,7 @@ export default function Home() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [advice, setAdvice] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'game' | 'yaku' | 'advice' | 'suji'>('game');
   const engineRef = useRef<MahjongEngine | null>(null);
 
   // Correction Mode States
@@ -49,7 +82,9 @@ export default function Home() {
     // Initialize engine on mount
     const engine = new MahjongEngine(() => {
       // This callback is called by the engine whenever state updates
-      setGameState(engine.getGameState());
+      const state = engine.getGameState();
+      console.log("GAME STATE UPDATE:", state);
+      setGameState(state);
     }, async () => {
       // onGameEnd callback
       setIsReviewing(true);
@@ -75,8 +110,8 @@ export default function Home() {
 
     return () => {
       if (engineRef.current && engineRef.current.game) {
-         if (typeof engineRef.current.game.stop === 'function') {
-           engineRef.current.game.stop();
+         if (typeof (engineRef.current.game as any).stop === 'function') {
+           (engineRef.current.game as any).stop();
          }
       }
     };
@@ -166,8 +201,30 @@ export default function Home() {
     const cleanTile = tile.replace(/[\*\-\+\=\_]/g, '');
     const cand = gameState.candidates.find(c => c.p === cleanTile);
     if (!cand) return "";
-    
-    return `打 ${tileToText(tile)}: ${cand.shanten === 0 ? 'テンパイ' : cand.shanten + 'シャンテン'}\n有効牌 ${cand.ukeireCount}枚 (${cand.ukeire.map(tileToText).join(', ')})`;
+
+    // スーツ別にグループ化して「m123 p456 s789 東南」形式に
+    const groups: Record<string, number[]> = { m: [], p: [], s: [] };
+    const honors: string[] = [];
+    const zLabel: Record<number, string> = { 1:'東',2:'南',3:'西',4:'北',5:'白',6:'發',7:'中' };
+
+    for (const t of cand.ukeire) {
+      const clean = t.replace(/[\*_\-\+\=]/g, '');
+      const suit = clean[0];
+      const num = parseInt(clean[1]) || 5;
+      if (suit === 'm' || suit === 'p' || suit === 's') {
+        groups[suit].push(num);
+      } else if (suit === 'z') {
+        honors.push(zLabel[num] ?? t);
+      }
+    }
+
+    const parts: string[] = [];
+    if (groups.m.length) parts.push(`m${groups.m.sort((a,b)=>a-b).join('')}`);
+    if (groups.p.length) parts.push(`p${groups.p.sort((a,b)=>a-b).join('')}`);
+    if (groups.s.length) parts.push(`s${groups.s.sort((a,b)=>a-b).join('')}`);
+    if (honors.length) parts.push(honors.join(''));
+
+    return `打 ${tileToLabel(tile)}: ${cand.shanten === 0 ? 'テンパイ' : cand.shanten + 'シャンテン'}\n有効牌 ${cand.ukeireCount}枚 (${parts.join(' ')})`;
   };
 
   if (!gameState) {
@@ -179,7 +236,18 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-green-900 text-white font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-green-900 text-white font-sans overflow-hidden">
+      {/* Top Navigation Tabs */}
+      <div className="bg-gray-900 border-b border-gray-700 flex shrink-0 shadow-lg z-30 relative">
+        <button onClick={() => setActiveTab('game')} className={`px-8 py-4 font-bold text-lg transition-colors ${activeTab === 'game' ? 'bg-green-700 text-white shadow-inner border-b-4 border-green-400' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>対局</button>
+        <button onClick={() => setActiveTab('yaku')} className={`px-8 py-4 font-bold text-lg transition-colors ${activeTab === 'yaku' ? 'bg-green-700 text-white shadow-inner border-b-4 border-green-400' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>役一覧</button>
+        <button onClick={() => setActiveTab('advice')} className={`px-8 py-4 font-bold text-lg transition-colors ${activeTab === 'advice' ? 'bg-green-700 text-white shadow-inner border-b-4 border-green-400' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>アドバイス</button>
+        <button onClick={() => setActiveTab('suji')} className={`px-8 py-4 font-bold text-lg transition-colors ${activeTab === 'suji' ? 'bg-green-700 text-white shadow-inner border-b-4 border-green-400' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>スジ・壁</button>
+      </div>
+
+      <div className="flex-1 relative overflow-hidden">
+        {/* Game Area */}
+        <div className={`absolute inset-0 flex transition-opacity duration-300 ${activeTab === 'game' ? 'opacity-100 z-10 pointer-events-auto' : 'opacity-0 z-0 pointer-events-none'}`}>
       {/* Toast Notification */}
       {toastMessage && (
         <div className="absolute top-10 left-1/2 transform -translate-x-1/2 z-50 bg-blue-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-in fade-in slide-in-from-top-4">
@@ -300,11 +368,11 @@ export default function Home() {
             </h2>
             <div className="mb-6 space-y-4">
               <p className="text-gray-200">
-                あなたの選択: <span className="font-bold text-xl ml-2">打 {tileToText(pendingDiscard!)}</span>
+                あなたの選択: <span className="font-bold text-xl ml-2 flex items-center gap-1">打 <img src={getTileImageUrl(pendingDiscard!)} alt={tileToText(pendingDiscard!)} className="w-6 h-8 inline bg-gray-100 rounded shadow-sm border border-gray-300 border-b-2 p-0.5" /></span>
               </p>
               <div className="bg-blue-900/30 border border-blue-500/30 p-4 rounded-xl">
                 <p className="text-blue-300 text-sm font-semibold mb-1">AIの推奨打牌</p>
-                <p className="text-2xl font-bold text-white">打 {tileToText(advice.recommendedDiscard)}</p>
+                <div className="text-2xl font-bold text-white flex items-center gap-2">打 <img src={getTileImageUrl(advice.recommendedDiscard)} alt={tileToText(advice.recommendedDiscard)} className="w-8 h-10 inline bg-gray-100 rounded shadow-sm border border-gray-300 border-b-2 p-0.5" /></div>
               </div>
               <div className="bg-gray-900/50 p-4 rounded-xl">
                 <p className="text-gray-400 text-sm font-semibold mb-1">AIの評価理由</p>
@@ -335,14 +403,24 @@ export default function Home() {
       {/* Left: Game Board */}
       <div className="flex-1 flex flex-col items-center justify-between p-4 relative overflow-hidden">
         <div className="absolute top-4 left-4 bg-black/50 px-4 py-2 rounded-lg flex flex-col gap-2">
-          <div className="text-xl font-bold text-white">{gameState.kyoku} - {gameState.honba}本場 - {gameState.turn}巡目</div>
+          <div className="flex items-center gap-3">
+            <div className="text-xl font-bold text-white">{gameState.kyoku} - {gameState.honba}本場 - {gameState.turn}巡目</div>
+            <div className={`px-2 py-0.5 rounded text-base font-black border ${
+              gameState.menfeng === '東' ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300' :
+              gameState.menfeng === '南' ? 'bg-red-500/20 border-red-400 text-red-300' :
+              gameState.menfeng === '西' ? 'bg-blue-500/20 border-blue-400 text-blue-300' :
+              'bg-gray-500/20 border-gray-400 text-gray-300'
+            }`}>
+              自家: {gameState.menfeng}
+            </div>
+          </div>
           <div className="flex gap-4 text-sm font-semibold text-gray-300">
             <div>残り: <span className="text-white">{gameState.shan}</span> 枚</div>
-            <div className="flex items-center gap-1">
-              ドラ: 
-              <div className="flex gap-1 ml-1">
+            <div className="flex items-center mt-2">
+              <span className="text-sm font-semibold text-gray-300 mr-2">ドラ:</span>
+              <div className="flex gap-1">
                 {gameState.dora?.map((d, i) => (
-                  <span key={i} className="bg-yellow-600 text-black px-1 rounded font-bold">{tileToText(d)}</span>
+                  <img key={i} src={getTileImageUrl(d)} alt={tileToText(d)} className="w-8 h-12 drop-shadow-md rounded-sm bg-gray-100 border border-gray-300 border-b-4 p-0.5" />
                 ))}
               </div>
             </div>
@@ -355,15 +433,24 @@ export default function Home() {
         {/* Naki (Pending Actions) Dialog */}
         {gameState.pendingAction && gameState.pendingAction.length > 0 && (
           <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 bg-gray-800/90 border border-gray-600 p-4 rounded-xl shadow-2xl flex gap-4 z-30 animate-in slide-in-from-bottom-4">
-            {gameState.pendingAction.map((action: any, i: number) => (
-              <button
-                key={i}
-                onClick={() => handleNakiAction(action.type, action.m)}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors"
-              >
-                {action.type === 'hule' ? 'ロン / ツモ' : action.type} {action.m && <span className="text-sm ml-2 opacity-80">{action.m}</span>}
-              </button>
-            ))}
+            {gameState.pendingAction.map((action: any, i: number) => {
+              const actionLabels: Record<string, string> = {
+                chi: 'チー',
+                peng: 'ポン',
+                gang: 'カン',
+                hule: 'ロン / ツモ'
+              };
+              const label = actionLabels[action.type] || action.type;
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleNakiAction(action.type, action.m)}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors whitespace-nowrap"
+                >
+                  {label} {action.m && <span className="text-sm ml-2 opacity-80">{action.m}</span>}
+                </button>
+              );
+            })}
             <button
               onClick={() => handleNakiAction('skip')}
               className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg text-lg transition-colors"
@@ -377,35 +464,64 @@ export default function Home() {
         <div className="w-full flex justify-center mt-12">
           <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
             {gameState.kawa.toimen?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
-                {tileToText(t)}
-              </div>
+              <img key={i} src={getTileImageUrl(t)} alt={tileToText(t)} className="w-8 h-12 drop-shadow-md rounded-sm bg-gray-100 border border-gray-300 border-b-4 p-0.5" />
             ))}
           </div>
         </div>
 
         {/* Center Field */}
-        <div className="grid grid-cols-3 grid-rows-3 gap-8 items-center w-full max-w-md my-auto relative">
-          <div className="col-start-1 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform -rotate-90 origin-center">
+        <div className="flex items-center justify-center gap-8 w-full max-w-3xl my-auto">
+          <div className="bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform -rotate-90 origin-center">
              {gameState.kawa.kamicha?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform rotate-90">
-                {tileToText(t)}
-              </div>
+              <img key={i} src={getTileImageUrl(t)} alt={tileToText(t)} className="w-8 h-12 drop-shadow-md rounded-sm bg-gray-100 border border-gray-300 border-l-4 p-0.5 transform rotate-90" />
             ))}
           </div>
-          <div className="col-start-2 row-start-2 flex flex-col items-center justify-center bg-green-900/80 p-4 rounded-full border-4 border-green-700 shadow-inner w-48 h-48">
-            <div className="text-gray-300 text-sm font-bold mb-1">対面: {gameState.defen[2]}</div>
-            <div className="flex w-full justify-between px-2 my-2 text-sm font-bold">
-              <span className="text-gray-300">上家: {gameState.defen[3]}</span>
-              <span className="text-gray-300">下家: {gameState.defen[1]}</span>
-            </div>
-            <div className="text-white text-lg font-bold mt-1">あなた: {gameState.defen[0]}</div>
-          </div>
-          <div className="col-start-3 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
-            {gameState.kawa.shimocha?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform -rotate-90">
-                {tileToText(t)}
+          <div className="bg-green-900/80 rounded-full border-4 border-green-700 shadow-inner w-56 h-56 shrink-0 relative z-10 flex items-center justify-center">
+            
+            {/* 対面 */}
+            <div className="absolute top-4 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 2 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 2 ? 'text-yellow-400' : 'text-gray-300'}`}>対面</span>
               </div>
+              <span className="text-gray-200 text-sm font-bold">{gameState.defen[2]}</span>
+            </div>
+
+            {/* 上家 */}
+            <div className="absolute left-3 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 3 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 3 ? 'text-yellow-400' : 'text-gray-300'}`}>上家</span>
+              </div>
+              <span className="text-gray-200 text-sm font-bold">{gameState.defen[3]}</span>
+            </div>
+
+            {/* 下家 */}
+            <div className="absolute right-3 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 1 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 1 ? 'text-yellow-400' : 'text-gray-300'}`}>下家</span>
+              </div>
+              <span className="text-gray-200 text-sm font-bold">{gameState.defen[1]}</span>
+            </div>
+
+            {/* あなた */}
+            <div className="absolute bottom-4 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 0 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 0 ? 'text-yellow-400' : 'text-white'}`}>あなた</span>
+              </div>
+              <span className="text-white text-lg font-bold">{gameState.defen[0]}</span>
+            </div>
+
+            {/* Center Info */}
+            <div className="flex flex-col items-center text-green-700/50 text-xs font-bold pointer-events-none">
+              MAHJONG
+            </div>
+          </div>
+          <div className="bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
+            {gameState.kawa.shimocha?.map((t, i) => (
+              <img key={i} src={getTileImageUrl(t)} alt={tileToText(t)} className="w-8 h-12 drop-shadow-md rounded-sm bg-gray-100 border border-gray-300 border-r-4 p-0.5 transform -rotate-90" />
             ))}
           </div>
         </div>
@@ -414,9 +530,7 @@ export default function Home() {
         <div className="w-full flex justify-center mb-8">
            <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
             {gameState.kawa.player?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
-                {tileToText(t)}
-              </div>
+              <img key={i} src={getTileImageUrl(t)} alt={tileToText(t)} className="w-8 h-12 drop-shadow-md rounded-sm bg-gray-100 border border-gray-300 border-b-4 p-0.5" />
             ))}
           </div>
         </div>
@@ -431,14 +545,14 @@ export default function Home() {
                   title={getUkeireTooltip(t)}
                   onClick={() => handleDiscard(t)}
                   disabled={!gameState.tsumo || isEvaluating}
-                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
-                    ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
-                      advice?.dangerousTiles?.includes(t) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
+                  className={`w-12 h-16 flex items-center justify-center rounded-md drop-shadow-lg transition-transform hover:-translate-y-2 relative group overflow-hidden bg-gray-100 border border-gray-300 border-b-4
+                    ${advice?.recommendedDiscard === t ? 'ring-4 ring-blue-500 shadow-blue-500/50 animate-pulse z-10' : 
+                      advice?.dangerousTiles?.includes(t) ? 'ring-4 ring-red-500 shadow-red-500/50 z-10' : ''}
                     ${(!gameState.tsumo || isEvaluating) ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
-                    ${pendingDiscard === t && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
+                    ${pendingDiscard === t && isEvaluating ? 'ring-4 ring-yellow-400 opacity-80' : ''}
                   `}
                 >
-                  {tileToText(t)}
+                  <img src={getTileImageUrl(t)} alt={tileToText(t)} className="w-full h-full object-fill p-1" />
                   {isCorrectionMode && gameState.tsumo && !isEvaluating && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   )}
@@ -451,14 +565,14 @@ export default function Home() {
                   title={getUkeireTooltip(gameState.tsumo)}
                   onClick={() => handleDiscard(gameState.tsumo!)}
                   disabled={isEvaluating}
-                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
-                    ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
-                      advice?.dangerousTiles?.includes(gameState.tsumo) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
+                  className={`w-12 h-16 flex items-center justify-center rounded-md drop-shadow-lg transition-transform hover:-translate-y-2 relative group overflow-hidden bg-gray-100 border border-gray-300 border-b-4
+                    ${advice?.recommendedDiscard === gameState.tsumo ? 'ring-4 ring-blue-500 shadow-blue-500/50 animate-pulse z-10' : 
+                      advice?.dangerousTiles?.includes(gameState.tsumo) ? 'ring-4 ring-red-500 shadow-red-500/50 z-10' : ''}
                     ${isEvaluating ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
-                    ${pendingDiscard === gameState.tsumo && isEvaluating ? 'bg-yellow-200 ring-4 ring-yellow-400' : ''}
+                    ${pendingDiscard === gameState.tsumo && isEvaluating ? 'ring-4 ring-yellow-400 opacity-80' : ''}
                   `}
                 >
-                  {tileToText(gameState.tsumo)}
+                  <img src={getTileImageUrl(gameState.tsumo)} alt={tileToText(gameState.tsumo)} className="w-full h-full object-fill p-1" />
                   {isCorrectionMode && !isEvaluating && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   )}
@@ -470,7 +584,7 @@ export default function Home() {
       </div>
 
       {/* Right: AI Advisor Sidebar */}
-      <div className="w-96 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
+      <div className="w-[450px] bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
         <div className="p-6 bg-gray-800 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
@@ -532,13 +646,56 @@ export default function Home() {
             <div className="space-y-4 animate-in slide-in-from-right-4 fade-in duration-300">
               <div className="bg-blue-900/30 border border-blue-500/30 p-5 rounded-xl">
                 <h3 className="text-blue-300 text-sm font-semibold uppercase tracking-wider mb-2">推奨打牌</h3>
-                <div className="text-3xl font-bold text-white mb-1">
-                  打 {tileToText(advice.recommendedDiscard)}
+                <div className="text-3xl font-bold text-white mb-1 flex items-center gap-2">
+                  打 <img src={getTileImageUrl(advice.recommendedDiscard)} alt={tileToText(advice.recommendedDiscard)} className="w-10 h-14 inline bg-gray-100 rounded-sm shadow-sm border border-gray-300 border-b-4 p-0.5" />
                 </div>
               </div>
 
+              {advice.evData && advice.evData.length > 0 && (
+                <div className="bg-gray-800 border border-gray-700 p-5 rounded-xl">
+                  <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-2">📊 外部AI 期待値(EV)</span>
+                    {advice.engineName && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                        advice.engineName === 'akochan' ? 'bg-blue-500/20 border-blue-400 text-blue-300' :
+                        advice.engineName === 'mortal' ? 'bg-purple-500/20 border-purple-400 text-purple-300' :
+                        'bg-gray-500/20 border-gray-400 text-gray-400'
+                      }`}>
+                        {advice.engineName === 'akochan' ? 'akochan (準最強)' : 
+                         advice.engineName === 'mortal' ? 'Mortal (最強位)' : '牌効率エンジン'}
+                      </span>
+                    )}
+                  </h3>
+                  <div className="space-y-3">
+                    {advice.evData.map((evItem: any, idx: number) => {
+                      const maxEv = Math.max(15, advice.evData[0].ev);
+                      const pct = Math.min(100, Math.max(0, (evItem.ev / maxEv) * 100));
+                      return (
+                        <div key={idx} className="flex items-center gap-3">
+                           <div className="w-10 h-14 shrink-0 rounded-sm overflow-hidden drop-shadow-sm bg-gray-100 border border-gray-300 border-b-4">
+                             <img src={getTileImageUrl(evItem.tile)} alt={tileToText(evItem.tile)} className="w-full h-full object-fill p-0.5" />
+                           </div>
+                           <div className="flex-1">
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className={idx === 0 ? "text-blue-400 font-bold" : "text-gray-400"}>EV: {evItem.ev.toFixed(2)}</span>
+                                {idx === 0 && <span className="text-blue-400 font-bold">Best</span>}
+                              </div>
+                              <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-1000 ${idx === 0 ? 'bg-blue-500' : 'bg-gray-500'}`}
+                                  style={{ width: `${pct}%` }}
+                                ></div>
+                              </div>
+                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-gray-800 border border-gray-700 p-5 rounded-xl">
-                <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">理由</h3>
+                <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">Gemini解説</h3>
                 <p className="text-gray-100 leading-relaxed text-sm whitespace-pre-wrap">
                   {advice.reason}
                 </p>
@@ -577,5 +734,28 @@ export default function Home() {
         </div>
       </div>
     </div>
-  );
+    
+    {/* Yaku List Area */}
+    {activeTab === 'yaku' && (
+      <div className="absolute inset-0 overflow-y-auto p-8 bg-green-900 z-10 animate-in fade-in">
+         <YakuListTab />
+      </div>
+    )}
+
+    {/* Advice Area */}
+    {activeTab === 'advice' && (
+      <div className="absolute inset-0 overflow-y-auto p-8 bg-green-900 z-10 animate-in fade-in">
+         <AdviceTab />
+      </div>
+    )}
+
+    {/* Suji Tab Area */}
+    {activeTab === 'suji' && (
+      <div className="absolute inset-0 overflow-y-auto p-8 bg-green-900 z-10 animate-in fade-in">
+         <SujiTab />
+      </div>
+    )}
+  </div>
+</div>
+);
 }

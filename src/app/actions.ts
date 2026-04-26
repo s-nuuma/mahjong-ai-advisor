@@ -1,3 +1,5 @@
+"use server";
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -42,6 +44,7 @@ const engineLabel: Record<string, string> = {
 async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; engine: string }> {
   const apiUrl = process.env.MORTAL_API_URL;
 
+  // --- リアルAPI呼び出し ---
   if (apiUrl) {
     try {
       const res = await fetch(`${apiUrl}/analyze`, {
@@ -67,9 +70,11 @@ async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; e
       };
     } catch (err) {
       console.error("External analysis error:", err);
+      // フォールバック（牌効率エンジン等）へ移行
     }
   }
 
+  // --- フォールバック（APIが使えない場合） ---
   return {
     evData: (gameState.candidates || []).map((c: any) => ({
       tile: c.p,
