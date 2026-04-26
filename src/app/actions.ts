@@ -1,3 +1,5 @@
+"use server";
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -27,7 +29,7 @@ function tileToJapanese(tile: string): string {
 
   const numMap = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
   const displayNum = num === 0 ? "赤五" : numMap[num];
-  return `\${displayNum}\${suitName[suit] || suit}`;
+  return `${displayNum}${suitName[suit] || suit}`;
 }
 
 const engineLabel: Record<string, string> = {
@@ -45,7 +47,7 @@ async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; e
   // --- リアルAPI呼び出し ---
   if (apiUrl) {
     try {
-      const res = await fetch(`\${apiUrl}/analyze`, {
+      const res = await fetch(`${apiUrl}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -77,7 +79,7 @@ async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; e
     evData: (gameState.candidates || []).map((c: any) => ({
       tile: c.p,
       ev: 0, 
-      reasoning: `有効牌: \${c.ukeireCount}枚`
+      reasoning: `有効牌: ${c.ukeireCount}枚`
     })),
     engine: "tile-efficiency"
   };
@@ -93,30 +95,30 @@ export async function getMahjongAdvice(gameState: any) {
 以下の解析データに基づき、現在の局面における最善手とその理由を、初心者〜中級者にも分かりやすく解説してください。
 
 【現在の状況】
-- 局: \${gameState.kyoku} \${gameState.honba}本場
-- 自風: \${gameState.menfeng}
-- 巡目: \${gameState.turn}巡目
-- ドラ: \${gameState.dora.map(tileToJapanese).join(', ')}
-- 手牌: \${gameState.tehai.map(tileToJapanese).join(', ')} \${gameState.tsumo ? '(ツモ: ' + tileToJapanese(gameState.tsumo) + ')' : ''}
+- 局: ${gameState.kyoku} ${gameState.honba}本場
+- 自風: ${gameState.menfeng}
+- 巡目: ${gameState.turn}巡目
+- ドラ: ${gameState.dora.map(tileToJapanese).join(', ')}
+- 手牌: ${gameState.tehai.map(tileToJapanese).join(', ')} ${gameState.tsumo ? '(ツモ: ' + tileToJapanese(gameState.tsumo) + ')' : ''}
 
-【\${engineLabel[engineCode] || engineCode}による解析データ (期待値上位)】
-\${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 \${tileToJapanese(e.tile)} (\${e.tile}): EV=\${e.ev} / \${e.reasoning || ''}`).join('\n')}
+【${engineLabel[engineCode] || engineCode}による解析データ (期待値上位)】
+${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)} (${e.tile}): EV=${e.ev} / ${e.reasoning || ''}`).join('\n')}
 
-※ 「打 \${tileToJapanese(externalAnalysis[0]?.tile)}」が推奨されています。
+※ 「打 ${tileToJapanese(externalAnalysis[0]?.tile)}」が推奨されています。
 この選択が「受け入れ枚数」「打点（ドラや役）」「安全度」の観点でどのように優れているか、日本語でプロンプトの解説として出力してください。
 特に、期待値が微差の場合はその理由（良形維持など）を推測して解説してください。
 
 【出力フォーマット】
 必ず以下のJSON形式のみで出力してください。
 {
-  "recommendedDiscard": "推奨される牌の記号（例: '\${externalAnalysis[0]?.tile}'）",
+  "recommendedDiscard": "推奨される牌の記号（例: '${externalAnalysis[0]?.tile}'）",
   "reason": "解説文（200-400文字程度。ここでは '東' や '7筒' といった日本語名を使用してください）",
   "targetYaku": ["狙うべき役のリスト"],
   "dangerousTiles": ["現状の危険牌（ある場合、元の記号で出力）"],
   "dangerAlert": "守備に関する注意点（ない場合はnull）",
-  "evData": \${JSON.stringify(externalAnalysis.slice(0, 3))}
+  "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))}
 }
-※ 重要：evData内の「tile」フィールドの値（\${externalAnalysis.slice(0, 3).map(e => e.tile).join(', ')}など）は、絶対に日本語に変換せず、元の記号のまま保持してください。`;
+※ 重要：evData内の「tile」フィールドの値（${externalAnalysis.slice(0, 3).map(e => e.tile).join(', ')}など）は、絶対に日本語に変換せず、元の記号のまま保持してください。`;
 
   try {
     const model = genAI.getGenerativeModel({
@@ -148,8 +150,8 @@ export async function getGameReview(logs: any[], finalState: any) {
 また、総括として、良かった点や今後の課題をアドバイスしてください。
 
 【対局結果】
-- 最終結果: \${finalState.kyoku}
-- ログ: \${JSON.stringify(logs)}
+- 最終結果: ${finalState.kyoku}
+- ログ: ${JSON.stringify(logs)}
 
 以下のJSON形式で回答してください:
 {
