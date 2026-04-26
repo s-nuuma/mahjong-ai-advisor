@@ -27,6 +27,7 @@ export interface GameState {
   pendingAction?: any; // For Naki (fulou) options
   zhuangfeng: string; // 場風 (e.g., "東")
   menfeng: string;    // 自風 (e.g., "南")
+  oyaId: number;      // 現在の親プレイヤーID (0=あなた,1=下家,2=対面,3=上家)
 }
 
 // Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles
@@ -315,6 +316,12 @@ export class MahjongEngine {
       return [];
     };
 
+    // 親(東家)のmenfeng=0。model.jushuが局番号（0=東1局の東家が親）
+    // 東1局=東家が親(menfeng=0)、東2局=南家が親(menfeng=1)...
+    const oyaMenfeng = model.jushu % 4; // 親のmenfeng番号
+    // humanのmenfengから見た相対的な親のID
+    const oyaRelativeId = (oyaMenfeng - humanMenfeng + 4) % 4;
+
     return {
       kyoku,
       honba,
@@ -334,7 +341,8 @@ export class MahjongEngine {
       },
       pendingAction: this.humanPlayer.pendingOptions,
       zhuangfeng,
-      menfeng: ["東", "南", "西", "北"][humanMenfeng] || "東"
+      menfeng: ["東", "南", "西", "北"][humanMenfeng] || "東",
+      oyaId: oyaRelativeId, // 0=あなた, 1=下家, 2=対面, 3=上家
     };
   }
 }

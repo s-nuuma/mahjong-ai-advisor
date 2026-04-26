@@ -58,7 +58,11 @@ async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; e
           kyoku: gameState.kyoku,
           honba: gameState.honba,
           turn: gameState.turn,
-          score: gameState.defen
+          shan: gameState.shan,
+          defen: gameState.defen,
+          menfeng: gameState.menfeng,
+          zhuangfeng: gameState.zhuangfeng,
+          kawa: gameState.kawa,
         }),
       });
 
