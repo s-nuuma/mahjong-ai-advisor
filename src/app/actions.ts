@@ -118,8 +118,8 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
   "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))}
 }`;
 
-  // 試行するモデルのリスト
-  const modelNames = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
+  // 試行するモデルのリスト（Google AI Studio確認済みモデル）
+  const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
   
   for (const modelName of modelNames) {
     try {
@@ -163,7 +163,7 @@ export async function getGameReview(logs: any[], finalState: any) {
 ログ: ${JSON.stringify(logs)}`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(prompt);
     let cleanText = result.response.text().trim();
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
