@@ -2,6 +2,7 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
+// API v1 を明示的に指定してみる
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
@@ -44,7 +45,6 @@ const engineLabel: Record<string, string> = {
 async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; engine: string }> {
   const apiUrl = process.env.MORTAL_API_URL;
 
-  // --- リアルAPI呼び出し ---
   if (apiUrl) {
     try {
       const res = await fetch(`${apiUrl}/analyze`, {
@@ -73,7 +73,6 @@ async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; e
     }
   }
 
-  // --- フォールバック ---
   return {
     evData: (gameState.candidates || []).map((c: any) => ({
       tile: c.p,
@@ -109,7 +108,7 @@ export async function getMahjongAdvice(gameState: any) {
 【解析データ】
 ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)} (${e.tile}): EV=${e.ev} / ${e.reasoning || ''}`).join('\n')}
 
-以下のJSON形式のみで回答してください。余計な説明文（"はい、解析します"等）やMarkdownの囲いは一切不要です。
+以下のJSON形式のみで回答してください。
 {
   "recommendedDiscard": "${externalAnalysis[0]?.tile}",
   "reason": "具体的な打牌理由を解説してください（150文字程度）。",
@@ -119,51 +118,52 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
   "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))}
 }`;
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-latest",
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      ]
-    });
+  // 試行するモデルのリスト
+  const modelNames = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
+  
+  for (const modelName of modelNames) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ]
+      });
 
-    const result = await model.generateContent(prompt);
-    const resultText = result.response.text();
-    
-    // 強力なクレンジング
-    let cleanText = resultText.trim();
-    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      cleanText = jsonMatch[0];
+      const result = await model.generateContent(prompt);
+      const resultText = result.response.text();
+      
+      let cleanText = resultText.trim();
+      const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) cleanText = jsonMatch[0];
+      
+      const parsed = JSON.parse(cleanText);
+      return { ...parsed, engineName };
+    } catch (error: any) {
+      console.error(`Gemini Error with ${modelName}:`, error.message);
+      // 次のモデルを試行
+      continue;
     }
-    
-    const parsed = JSON.parse(cleanText);
-    return { ...parsed, engineName };
-  } catch (error: any) {
-    console.error("Gemini Error Details:", error);
-    return {
-      recommendedDiscard: externalAnalysis[0]?.tile || "",
-      reason: `Gemini解析中にエラーが発生しました (${error?.message || "不明なエラー"})。APIキー、ネットワーク、またはリージョンの制限を確認してください。`,
-      targetYaku: [],
-      evData: externalAnalysis.slice(0, 3),
-      engineName
-    };
   }
+
+  return {
+    recommendedDiscard: externalAnalysis[0]?.tile || "",
+    reason: "Geminiのすべてのモデル（1.5-flash, 1.5-pro, pro）でエラーが発生しました。APIキーの権限またはリージョン設定を確認してください。期待値トップの打牌のみ表示します。",
+    targetYaku: [],
+    evData: externalAnalysis.slice(0, 3),
+    engineName
+  };
 }
 
 export async function getGameReview(logs: any[], finalState: any) {
   const prompt = `あなたはプロ麻雀解説者です。ログを分析し、JSONで評価してください。
-{
-  "matchRate": "0-100の数値",
-  "reviewText": "総括のアドバイス（日本語）"
-}
 ログ: ${JSON.stringify(logs)}`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent(prompt);
     let cleanText = result.response.text().trim();
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
