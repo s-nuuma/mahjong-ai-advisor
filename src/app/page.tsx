@@ -14,6 +14,66 @@ const getTileImageUrl = (tile: string) => {
   return `/images/tiles/${t}.svg`;
 };
 
+/** **bold** マークアップをインライン <strong> に変換するヘルパー */
+function renderBoldText(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+/** 5セクション（【結論】〜【注意】）を分割してカード表示するコンポーネント */
+const SECTION_CONFIG = [
+  { key: '結論', label: '結論', icon: '🎯', color: 'border-blue-500/50 bg-blue-900/10', labelColor: 'text-blue-400' },
+  { key: '根拠', label: '根拠', icon: '📊', color: 'border-green-500/50 bg-green-900/10', labelColor: 'text-green-400' },
+  { key: '方針', label: '方針', icon: '🗺️', color: 'border-purple-500/50 bg-purple-900/10', labelColor: 'text-purple-400' },
+  { key: '比較', label: '比較', icon: '⚖️', color: 'border-yellow-500/50 bg-yellow-900/10', labelColor: 'text-yellow-400' },
+  { key: '注意', label: '注意', icon: '⚠️', color: 'border-red-500/50 bg-red-900/10', labelColor: 'text-red-400' },
+];
+
+function AdviceReasonDisplay({ reason }: { reason: string }) {
+  // 【セクション名】：... の形式でテキストを分割
+  const sectionRegex = /【(結論|根拠|方針|比較|注意)】[：:]/g;
+  const matches = [...reason.matchAll(sectionRegex)];
+
+  // セクションが見つからない場合はそのまま表示
+  if (matches.length === 0) {
+    return (
+      <p className="text-gray-100 leading-relaxed text-sm whitespace-pre-wrap">{reason}</p>
+    );
+  }
+
+  const sections: { key: string; content: string }[] = [];
+  matches.forEach((match, i) => {
+    const start = match.index! + match[0].length;
+    const end = matches[i + 1]?.index ?? reason.length;
+    sections.push({ key: match[1], content: reason.slice(start, end).trim() });
+  });
+
+  return (
+    <div className="space-y-2">
+      {sections.map(({ key, content }) => {
+        const config = SECTION_CONFIG.find(c => c.key === key);
+        if (!config) return null;
+        return (
+          <div key={key} className={`rounded-lg border p-3 ${config.color}`}>
+            <div className={`text-xs font-bold mb-1 flex items-center gap-1 ${config.labelColor}`}>
+              <span>{config.icon}</span>
+              <span>{config.label}</span>
+            </div>
+            <p className="text-gray-200 text-xs leading-relaxed">
+              {renderBoldText(content)}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const tileToText = (tile: string) => {
   if (!tile || tile.length < 2) return tile;
   const suit = tile[0];
@@ -445,7 +505,7 @@ export default function Home() {
                 <button
                   key={i}
                   onClick={() => handleNakiAction(action.type, action.m)}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors"
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors whitespace-nowrap"
                 >
                   {label} {action.m && <span className="text-sm ml-2 opacity-80">{action.m}</span>}
                 </button>
@@ -584,7 +644,7 @@ export default function Home() {
       </div>
 
       {/* Right: AI Advisor Sidebar */}
-      <div className="w-96 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
+      <div className="w-[550px] shrink-0 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
         <div className="p-6 bg-gray-800 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
@@ -694,11 +754,9 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="bg-gray-800 border border-gray-700 p-5 rounded-xl">
-                <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">Gemini解説</h3>
-                <p className="text-gray-100 leading-relaxed text-sm whitespace-pre-wrap">
-                  {advice.reason}
-                </p>
+              <div className="bg-gray-800 border border-gray-700 p-4 rounded-xl">
+                <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">🤖 Gemini解説</h3>
+                <AdviceReasonDisplay reason={advice.reason} />
               </div>
 
               {advice.targetYaku && advice.targetYaku.length > 0 && (
