@@ -584,7 +584,7 @@ export default function Home() {
       </div>
 
       {/* Right: AI Advisor Sidebar */}
-      <div className="w-[450px] bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
+      <div className="w-[550px] shrink-0 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl z-10 relative">
         <div className="p-6 bg-gray-800 border-b border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-blue-400">Gemini 3 育成コーチ</h2>
