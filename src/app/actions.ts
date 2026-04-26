@@ -2,138 +2,168 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Ensure the API key is set in environment variables
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// 外部エンジン（Mortal等）のAPIを呼び出すためのモック関数
-// 本稼働時はここを実際のMortalサーバーへのfetch処理に差し替えます
-async function fetchExternalAnalysis(gameState: any) {
-  // TODO: Replace with actual Mortal API call
-  // const res = await fetch("http://localhost:8000/analyze", { method: "POST", body: JSON.stringify(gameState) });
-  // return await res.json();
+/**
+ * 内部記号（"z1", "p7"等）を日本語名称に変換するヘルパー
+ */
+function tileToJapanese(tile: string): string {
+  if (!tile) return "";
+  const suit = tile[0];
+  const num = parseInt(tile[1]);
+  if (isNaN(num)) return tile;
 
-  // ダミーの期待値(EV)計算
-  // シャンテン数が少なく、有効牌が多いほど高いEVになるようシミュレート
-  const evData = (gameState.candidates || []).map((c: any) => {
-    const base = 8 - c.shanten;
-    const ukeireBonus = c.ukeireCount * 0.1;
-    let ev = (base * 1.5) + ukeireBonus;
-    // 複雑なAIの揺らぎを模倣
-    ev += (Math.random() * 0.5 - 0.25);
-    return {
-      tile: c.p,
-      ev: Math.max(0, parseFloat(ev.toFixed(2)))
+  const suitName: Record<string, string> = {
+    m: "萬子",
+    p: "筒子",
+    s: "索子",
+  };
+
+  if (suit === "z") {
+    const honorName: Record<number, string> = {
+      1: "東", 2: "南", 3: "西", 4: "北",
+      5: "白", 6: "發", 7: "中"
     };
-  });
+    return honorName[num] || tile;
+  }
 
-  evData.sort((a: any, b: any) => b.ev - a.ev);
-  return evData;
+  const numMap = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  const displayNum = num === 0 ? "赤五" : numMap[num];
+  return `${displayNum}${suitName[suit] || suit}`;
+}
+
+const engineLabel: Record<string, string> = {
+  'akochan': 'akochan (準最強AI)',
+  'mortal': 'Mortal (最強位AI)',
+  'tile-efficiency': '牌効率エンジン'
+};
+
+/**
+ * 解析サーバー（Dockerコンテナ）から解析データを取得
+ */
+async function fetchExternalAnalysis(gameState: any): Promise<{ evData: any[]; engine: string }> {
+  const apiUrl = process.env.MORTAL_API_URL;
+
+  // --- リアルAPI呼び出し ---
+  if (apiUrl) {
+    try {
+      const res = await fetch(`${apiUrl}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tehai: gameState.tehai,
+          tsumo: gameState.tsumo,
+          candidates: gameState.candidates,
+          dora: gameState.dora,
+          kyoku: gameState.kyoku,
+          honba: gameState.honba,
+          turn: gameState.turn,
+          score: gameState.defen
+        }),
+      });
+
+      if (!res.ok) throw new Error("Backend analysis failed");
+      const data = await res.json();
+      return {
+        evData: (data.evData || []).map((e: any) => ({ tile: e.tile, ev: e.ev, reasoning: e.reasoning })),
+        engine: data.engine ?? "external",
+      };
+    } catch (err) {
+      console.error("External analysis error:", err);
+      // フォールバック（牌効率エンジン等）へ移行
+    }
+  }
+
+  // --- フォールバック（APIが使えない場合） ---
+  return {
+    evData: (gameState.candidates || []).map((c: any) => ({
+      tile: c.p,
+      ev: 0, 
+      reasoning: `有効牌: ${c.ukeireCount}枚`
+    })),
+    engine: "tile-efficiency"
+  };
 }
 
 export async function getMahjongAdvice(gameState: any) {
-  // 外部エンジンによる期待値(EV)解析を取得
-  const externalAnalysis = await fetchExternalAnalysis(gameState);
-  
-  const prompt = `
-あなたは麻雀のトッププロであり、AIの解析結果を人間にわかりやすく翻訳する優秀なコーチです。
-現在、外部の麻雀AIエンジン（Mortal等）が盤面を解析し、各打牌の期待値（EV）を算出しました。
-この期待値データを元に、「なぜその牌を切るべきと評価されたのか」「どのような狙いがあるのか」を論理的に解説してください。
+  // 1. 外部エンジンによる期待値解析
+  const { evData: externalAnalysis, engine: engineCode } = await fetchExternalAnalysis(gameState);
+  const engineName = engineCode; // "akochan", "mortal" etc.
+
+  // 2. Geminiによる文脈理解と解説の生成
+  const prompt = `あなたは世界最高峰の麻雀コーチ「Gemini 3」です。
+以下の解析データに基づき、現在の局面における最善手とその理由を、初心者〜中級者にも分かりやすく解説してください。
 
 【現在の状況】
 - 局: ${gameState.kyoku} ${gameState.honba}本場
-- 場風: ${gameState.zhuangfeng} / 自風: ${gameState.menfeng}
-- 点数状況: 自分 ${gameState.defen[0]}点 / 下家 ${gameState.defen[1]}点 / 対面 ${gameState.defen[2]}点 / 上家 ${gameState.defen[3]}点
-- ドラ: ${gameState.dora.join(', ') || 'なし'}
+- 自風: ${gameState.menfeng}
 - 巡目: ${gameState.turn}巡目
-- 手牌: ${gameState.tehai.join(', ')}
-- ツモ牌: ${gameState.tsumo || 'なし'}
-- 自分の捨て牌: ${gameState.kawa.player.join(', ')}
-- 対面の捨て牌: ${gameState.kawa.toimen.join(', ')}
-- 上家の捨て牌: ${gameState.kawa.kamicha.join(', ')}
-- 下家の捨て牌: ${gameState.kawa.shimocha.join(', ')}
+- ドラ: ${gameState.dora.map(tileToJapanese).join(', ')}
+- 手牌: ${gameState.tehai.map(tileToJapanese).join(', ')} ${gameState.tsumo ? '(ツモ: ' + tileToJapanese(gameState.tsumo) + ')' : ''}
 
-【外部AIエンジンによる解析データ (期待値上位)】
-${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${e.tile}: 期待値(EV) ${e.ev}`).join('\n')}
+【${engineLabel[engineCode] || engineCode}による解析データ (期待値上位)】
+${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)} (${e.tile}): EV=${e.ev} / ${e.reasoning || ''}`).join('\n')}
 
-※ あなたは上記の「外部AIの期待値が最も高い牌」を推奨打牌として採用し、その理由（受け入れ枚数、打点、安全度のバランスなど）を初心者にも分かりやすく言語化してください。
+※ 「打 ${tileToJapanese(externalAnalysis[0]?.tile)}」が推奨されています。
+この選択が「受け入れ枚数」「打点（ドラや役）」「安全度」の観点でどのように優れているか、日本語でプロンプトの解説として出力してください。
+特に、期待値が微差の場合はその理由（良形維持など）を推測して解説してください。
 
 【出力フォーマット】
-必ず以下のJSON形式のみで出力してください。Markdownのコードブロックは不要です。
+必ず以下のJSON形式のみで出力してください。
 {
-  "recommendedDiscard": "期待値が最も高い牌（例: 9s）",
-  "reason": "なぜ外部AIはその牌を最も高く評価したのか、その論理的な理由の解説",
+  "recommendedDiscard": "推奨される牌の記号（例: '${externalAnalysis[0]?.tile}'）",
+  "reason": "解説文（200-400文字程度。ここでは '東' や '7筒' といった日本語名を使用してください）",
   "targetYaku": ["狙うべき役のリスト"],
-  "dangerousTiles": ["危険な牌のリスト（例: ['1m', '9p']）。ない場合は空配列"],
-  "dangerAlert": "注意点や守備に関するアドバイス。危険がない場合はnull",
-  "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))} // 上位3件のEVデータをそのまま含めてください
-}`;
+  "dangerousTiles": ["現状の危険牌（ある場合、元の記号で出力）"],
+  "dangerAlert": "守備に関する注意点（ない場合はnull）",
+  "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))}
+}
+※ 重要：evData内の「tile」フィールドの値（${externalAnalysis.slice(0, 3).map(e => e.tile).join(', ')}など）は、絶対に日本語に変換せず、元の記号のまま保持してください。`;
 
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-      }
+      model: "gemini-2.0-flash",
+      generationConfig: { responseMimeType: "application/json" }
     });
+
     const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const resultText = response.text();
-    if (!resultText) {
-      throw new Error("No response from Gemini");
-    }
-    
-    // Parse the JSON response
-    return JSON.parse(resultText);
+    const resultText = result.response.text();
+    const parsed = JSON.parse(resultText);
+
+    // 使用エンジン名をレスポンスに付加（UI表示用）
+    return { ...parsed, engineName };
   } catch (error) {
-    console.error("Error calling Gemini API:", error);
+    console.error("Gemini Error:", error);
     return {
-      recommendedDiscard: gameState.tsumo || gameState.tehai[0],
-      reason: "AIの解析に失敗しました。自力で最適な一打を考えてみましょう。",
+      recommendedDiscard: externalAnalysis[0]?.tile || "",
+      reason: "解析中にエラーが発生しましたが、現在の期待値トップはこの打牌です。",
       targetYaku: [],
-      dangerousTiles: [],
-      dangerAlert: null,
-      evData: []
+      evData: externalAnalysis.slice(0, 3),
+      engineName
     };
   }
 }
 
-export async function getGameReview(logs: any[], gameState: any) {
-  const prompt = `
-あなたは麻雀のトッププロであり、熱血コーチです。
-たった今終了した局の全ターンの打牌ログを分析し、ユーザーの選択の良かった点、悪かった点、そして「最も勝負を分けたポイント」を解説してください。
+export async function getGameReview(logs: any[], finalState: any) {
+  const prompt = `あなたはプロ麻雀解説者です。
+以下の一局の打牌ログを分析し、ユーザーの打牌とAIの推奨打牌の一致率を評価してください。
+また、総括として、良かった点や今後の課題をアドバイスしてください。
 
-【局の情報】
-- 局: ${gameState.kyoku} ${gameState.honba}本場
+【対局結果】
+- 最終結果: ${finalState.kyoku}
+- ログ: ${JSON.stringify(logs)}
 
-【打牌ログ (ターン別)】
-${logs.map((log, i) => `巡目 ${i+1}: ユーザー打 [${log.userDiscard}], AI推奨 [${log.aiDiscard}] ${log.userDiscard === log.aiDiscard ? '(一致)' : '(不一致)'}`).join('\n')}
-
-【出力フォーマット】
-以下のJSON形式のみで出力してください。
+以下のJSON形式で回答してください:
 {
-  "matchRate": "一致率（パーセント、数値のみ。例: 85）",
-  "reviewText": "局全体を通した解説文。一致しなかったターンの中で、どこが最も期待値を損ねていたか（あるいは独自の意図があったか）を具体的に長文で解説してください。マークダウンを使用して強調なども行って構いません。"
+  "matchRate": "0-100の数値",
+  "reviewText": "総括のアドバイス（日本語）"
 }`;
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-      }
-    });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const resultText = response.text();
-    if (!resultText) {
-      throw new Error("No response from Gemini");
-    }
-    return JSON.parse(resultText);
-  } catch (error) {
-    console.error("Error calling Gemini Review API:", error);
-    return {
-      matchRate: 0,
-      reviewText: "レビューの生成に失敗しました。ログを確認してみましょう。"
-    };
-  }
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    generationConfig: { responseMimeType: "application/json" }
+  });
+
+  const result = await model.generateContent(prompt);
+  return JSON.parse(result.response.text());
 }
