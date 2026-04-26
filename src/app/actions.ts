@@ -90,12 +90,22 @@ export async function getMahjongAdvice(gameState: any) {
   const { evData: externalAnalysis, engine: engineCode } = await fetchExternalAnalysis(gameState);
   const engineName = engineCode;
 
+  if (!externalAnalysis || externalAnalysis.length === 0) {
+    return {
+      recommendedDiscard: "",
+      reason: "有効な打牌候補が見つかりませんでした。",
+      targetYaku: [],
+      evData: [],
+      engineName
+    };
+  }
+
   // 2. Geminiによる文脈理解と解説の生成
   const prompt = `あなたは世界最高峰の麻雀コーチ「Gemini 3」です。
 提供される解析データを「麻雀中級へのデジタル理論ガイド」に基づいて、以下の5項目で論理的に解説してください。
 
 【コーチングの鉄則】
-1. 構造化：解説文（reason）は必ず以下の5セクション構成とし、セクションごとに改行（\n）を入れてください。
+1. 構造化：解説文（reason）は必ず以下の5セクション構成とし、セクションごとに改行（\\n）を入れてください。
 2. 強調：重要なキーワード（5ブロック、期待値、安牌、役牌、廃棄順序など）は **...** で囲んでください。
 3. トーン：客観的かつフラットなトーンを維持し、事実と根拠に基づいて説明してください。
 4. 数値の活用：${engineLabel[engineCode] || engineCode}のデータ（EV、有効牌数など）を論理の裏付けとして必ず使用してください。
@@ -118,7 +128,7 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
 【出力フォーマット】
 必ず以下のJSON形式のみで出力してください。
 {
-  "recommendedDiscard": "推奨される牌の記号（例: '${externalAnalysis[0]?.tile}'）",
+  "recommendedDiscard": "${externalAnalysis[0]?.tile}",
   "reason": "【結論】：...\\n【根拠】：...\\n【方針】：...\\n【比較】：...\\n【注意】：...",
   "targetYaku": ["狙うべき役のリスト"],
   "dangerousTiles": ["現状の危険牌（元の記号で出力）"],
@@ -129,20 +139,29 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
 
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-1.5-flash", // 互換性のために1.5-flashを使用
       generationConfig: { responseMimeType: "application/json" }
     });
 
     const result = await model.generateContent(prompt);
     const resultText = result.response.text();
-    const parsed = JSON.parse(resultText);
+    
+    // JSONのパース（Markdownの囲い等があれば除去）
+    let cleanText = resultText.trim();
+    if (cleanText.startsWith("```json")) {
+      cleanText = cleanText.substring(7, cleanText.length - 3).trim();
+    } else if (cleanText.startsWith("```")) {
+      cleanText = cleanText.substring(3, cleanText.length - 3).trim();
+    }
+    
+    const parsed = JSON.parse(cleanText);
 
     return { ...parsed, engineName };
   } catch (error) {
     console.error("Gemini Error:", error);
     return {
       recommendedDiscard: externalAnalysis[0]?.tile || "",
-      reason: "解析中にエラーが発生しましたが、現在の期待値トップはこの打牌です。",
+      reason: "Gemini解析中にエラーが発生しました。APIキーまたはネットワークを確認してください。現在の期待値トップはこの打牌です。",
       targetYaku: [],
       evData: externalAnalysis.slice(0, 3),
       engineName
@@ -166,10 +185,14 @@ export async function getGameReview(logs: any[], finalState: any) {
 }`;
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-1.5-flash",
     generationConfig: { responseMimeType: "application/json" }
   });
 
   const result = await model.generateContent(prompt);
-  return JSON.parse(result.response.text());
+  let cleanText = result.response.text().trim();
+  if (cleanText.startsWith("```json")) {
+    cleanText = cleanText.substring(7, cleanText.length - 3).trim();
+  }
+  return JSON.parse(cleanText);
 }
