@@ -102,25 +102,40 @@ export async function getMahjongAdvice(gameState: any) {
   }
 
   const prompt = `あなたは世界最高峰の麻雀コーチ「Gemini 3」です。
-提供される解析データに基づいて、現在の局面における最善手とその理由を解説してください。
+提供される解析データを「麻雀中級へのデジタル理論ガイド」に基づいて、以下の5項目で論理的に解説してください。
 
-【局面情報】
+【コーチングの鉄則】
+1. 構造化：解説文（reason）は必ず以下の5セクション構成とし、各セクションの頭に【結論】【根拠】【方針】【比較】【注意】というラベルを付けてください。
+2. 強調：重要なキーワード（5ブロック、期待値、安牌、役牌、廃棄順序など）は **...** で囲んでください。
+3. トーン：客観的かつフラットなトーンを維持し、事実と根拠に基づいて説明してください。
+4. 数値の活用：${engineLabel[engineCode] || engineCode}のデータ（EV、有効牌数など）を論理の裏付けとして必ず使用してください。
+
+【現在の局面情報】
 - 局: ${gameState.kyoku} ${gameState.honba}本場 / 自風: ${gameState.menfeng}
 - 巡目: ${gameState.turn}巡目 / ドラ: ${gameState.dora.map(tileToJapanese).join(', ')}
 - 手牌: ${gameState.tehai.map(tileToJapanese).join(', ')} ${gameState.tsumo ? '(ツモ: ' + tileToJapanese(gameState.tsumo) + ')' : ''}
 
-【解析データ】
+【解析データ（期待値）】
 ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)} (${e.tile}): EV=${e.ev} / ${e.reasoning || ''}`).join('\n')}
 
-以下のJSON形式のみで回答してください。
+【解説の5項目構成（必ず全項目を出力）】
+1. 【結論】：何を切り、どの理論（**5ブロック理論**、**スリム化**等）を適用したか。
+2. 【根拠】：**期待値（EV）**と**有効牌（受け入れ枚数）**の数値的な裏付け。
+3. 【方針】：この局で最終的に目指すべき**役**と**想定打点**（リーチ・タンヤオ・平和など）。
+4. 【比較】：期待値が微差の他牌と比較して、なぜ今回の牌が優れているか。
+5. 【注意】：現状の**放銃リスク**や、次に引いた際に展開が苦しくなる牌への備え。
+
+【出力フォーマット】
+必ず以下のJSON形式のみで出力してください。余計な説明文やMarkdownコードブロックは不要です。
 {
   "recommendedDiscard": "${externalAnalysis[0]?.tile}",
-  "reason": "具体的な打牌理由を解説してください（150文字程度）。",
-  "targetYaku": ["狙える役"],
-  "dangerousTiles": ["現状の危険牌（元の記号）"],
-  "dangerAlert": "守備のアドバイス（ない場合はnull）",
+  "reason": "【結論】：...\\n【根拠】：...\\n【方針】：...\\n【比較】：...\\n【注意】：...",
+  "targetYaku": ["狙うべき役のリスト"],
+  "dangerousTiles": ["現状の危険牌（元の記号で出力）"],
+  "dangerAlert": "守備に関する注意点の要約（ない場合はnull）",
   "evData": ${JSON.stringify(externalAnalysis.slice(0, 3))}
-}`;
+}
+※ 重要：evData内の「tile」フィールドの値は、絶対に日本語に変換せず、元の記号のまま保持してください。`;
 
   // 試行するモデルのリスト（Google AI Studio確認済みモデル）
   const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
@@ -129,6 +144,9 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
     try {
       const model = genAI.getGenerativeModel({
         model: modelName,
+        generationConfig: {
+          responseMimeType: "application/json", // JSON出力を強制
+        },
         safetySettings: [
           { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
           { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -148,19 +166,19 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
       return { ...parsed, engineName };
     } catch (error: any) {
       console.error(`Gemini Error with ${modelName}:`, error.message);
-      // 次のモデルを試行
       continue;
     }
   }
 
   return {
     recommendedDiscard: externalAnalysis[0]?.tile || "",
-    reason: "Geminiのすべてのモデル（1.5-flash, 1.5-pro, pro）でエラーが発生しました。APIキーの権限またはリージョン設定を確認してください。期待値トップの打牌のみ表示します。",
+    reason: "Gemini解析中にエラーが発生しました。APIキーの権限またはリージョン設定を確認してください。",
     targetYaku: [],
     evData: externalAnalysis.slice(0, 3),
     engineName
   };
 }
+
 
 export async function getGameReview(logs: any[], finalState: any) {
   const prompt = `あなたはプロ麻雀解説者です。ログを分析し、JSONで評価してください。
