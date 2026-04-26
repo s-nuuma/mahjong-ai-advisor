@@ -28,7 +28,7 @@ sudo docker-compose up -d
 起動確認：
 ```bash
 curl http://localhost:8000/health
-# → {"status":"ok","akochan":true,"engine":"akochan"} が返ればOK
+# → {"status":"ok","mahjong_lib":true,"engine":"tile-efficiency"} が返ればOK
 ```
 
 > **💡 ポイント:** PCを再起動した場合も `sudo docker-compose up -d` を再実行してください。
