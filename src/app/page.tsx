@@ -5,21 +5,22 @@ import { getMahjongAdvice, getGameReview } from "./actions";
 import { MahjongEngine, GameState } from "@/lib/mahjong-engine";
 
 const tileToText = (tile: string) => {
-  // majiang-core format: m1, p5, s9, z1
-  const suitMap: Record<string, string> = { m: "萬", p: "筒", s: "索" };
-  const zMap: Record<string, string> = { "1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "発", "7": "中" };
-  
   if (!tile || tile.length < 2) return tile;
-  
   const suit = tile[0];
-  const num = tile[1];
+  let num = parseInt(tile[1]);
+  if (isNaN(num)) return tile;
   
-  if (suitMap[suit]) {
-    // 0 is aka-dora (red 5)
-    return (num === "0" ? "5" : num) + suitMap[suit];
-  }
-  if (suit === "z" && zMap[num]) {
-    return zMap[num];
+  if (num === 0) num = 5; // Aka-dora
+
+  if (suit === 'm') return String.fromCodePoint(0x1F007 + num - 1);
+  if (suit === 's') return String.fromCodePoint(0x1F010 + num - 1);
+  if (suit === 'p') return String.fromCodePoint(0x1F019 + num - 1);
+  if (suit === 'z') {
+    const zMap: Record<number, number> = {
+      1: 0x1F000, 2: 0x1F001, 3: 0x1F002, 4: 0x1F003,
+      5: 0x1F006, 6: 0x1F005, 7: 0x1F004
+    };
+    return zMap[num] ? String.fromCodePoint(zMap[num]) : tile;
   }
   
   return tile;
@@ -49,7 +50,9 @@ export default function Home() {
     // Initialize engine on mount
     const engine = new MahjongEngine(() => {
       // This callback is called by the engine whenever state updates
-      setGameState(engine.getGameState());
+      const state = engine.getGameState();
+      console.log("GAME STATE UPDATE:", state);
+      setGameState(state);
     }, async () => {
       // onGameEnd callback
       setIsReviewing(true);
@@ -75,8 +78,8 @@ export default function Home() {
 
     return () => {
       if (engineRef.current && engineRef.current.game) {
-         if (typeof engineRef.current.game.stop === 'function') {
-           engineRef.current.game.stop();
+         if (typeof (engineRef.current.game as any).stop === 'function') {
+           (engineRef.current.game as any).stop();
          }
       }
     };
@@ -338,11 +341,13 @@ export default function Home() {
           <div className="text-xl font-bold text-white">{gameState.kyoku} - {gameState.honba}本場 - {gameState.turn}巡目</div>
           <div className="flex gap-4 text-sm font-semibold text-gray-300">
             <div>残り: <span className="text-white">{gameState.shan}</span> 枚</div>
-            <div className="flex items-center gap-1">
-              ドラ: 
-              <div className="flex gap-1 ml-1">
+            <div className="flex items-center mt-2">
+              <span className="text-sm font-semibold text-gray-300 mr-2">ドラ:</span>
+              <div className="flex gap-1">
                 {gameState.dora?.map((d, i) => (
-                  <span key={i} className="bg-yellow-600 text-black px-1 rounded font-bold">{tileToText(d)}</span>
+                  <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm shadow-md text-3xl">
+                    {tileToText(d)}
+                  </div>
                 ))}
               </div>
             </div>
@@ -355,15 +360,24 @@ export default function Home() {
         {/* Naki (Pending Actions) Dialog */}
         {gameState.pendingAction && gameState.pendingAction.length > 0 && (
           <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 bg-gray-800/90 border border-gray-600 p-4 rounded-xl shadow-2xl flex gap-4 z-30 animate-in slide-in-from-bottom-4">
-            {gameState.pendingAction.map((action: any, i: number) => (
-              <button
-                key={i}
-                onClick={() => handleNakiAction(action.type, action.m)}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors"
-              >
-                {action.type === 'hule' ? 'ロン / ツモ' : action.type} {action.m && <span className="text-sm ml-2 opacity-80">{action.m}</span>}
-              </button>
-            ))}
+            {gameState.pendingAction.map((action: any, i: number) => {
+              const actionLabels: Record<string, string> = {
+                chi: 'チー',
+                peng: 'ポン',
+                gang: 'カン',
+                hule: 'ロン / ツモ'
+              };
+              const label = actionLabels[action.type] || action.type;
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleNakiAction(action.type, action.m)}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg text-lg capitalize transition-colors"
+                >
+                  {label} {action.m && <span className="text-sm ml-2 opacity-80">{action.m}</span>}
+                </button>
+              );
+            })}
             <button
               onClick={() => handleNakiAction('skip')}
               className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg text-lg transition-colors"
@@ -377,7 +391,7 @@ export default function Home() {
         <div className="w-full flex justify-center mt-12">
           <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
             {gameState.kawa.toimen?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
+              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm shadow-md text-3xl">
                 {tileToText(t)}
               </div>
             ))}
@@ -385,25 +399,60 @@ export default function Home() {
         </div>
 
         {/* Center Field */}
-        <div className="grid grid-cols-3 grid-rows-3 gap-8 items-center w-full max-w-md my-auto relative">
-          <div className="col-start-1 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform -rotate-90 origin-center">
+        <div className="flex items-center justify-center gap-8 w-full max-w-3xl my-auto">
+          <div className="bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform -rotate-90 origin-center">
              {gameState.kawa.kamicha?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform rotate-90">
+              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm shadow-md transform rotate-90 text-3xl">
                 {tileToText(t)}
               </div>
             ))}
           </div>
-          <div className="col-start-2 row-start-2 flex flex-col items-center justify-center bg-green-900/80 p-4 rounded-full border-4 border-green-700 shadow-inner w-48 h-48">
-            <div className="text-gray-300 text-sm font-bold mb-1">対面: {gameState.defen[2]}</div>
-            <div className="flex w-full justify-between px-2 my-2 text-sm font-bold">
-              <span className="text-gray-300">上家: {gameState.defen[3]}</span>
-              <span className="text-gray-300">下家: {gameState.defen[1]}</span>
+          <div className="bg-green-900/80 rounded-full border-4 border-green-700 shadow-inner w-56 h-56 shrink-0 relative z-10 flex items-center justify-center">
+            
+            {/* 対面 */}
+            <div className="absolute top-4 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 2 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 2 ? 'text-yellow-400' : 'text-gray-300'}`}>対面</span>
+              </div>
+              <span className="text-gray-200 text-sm font-bold">{gameState.defen[2]}</span>
             </div>
-            <div className="text-white text-lg font-bold mt-1">あなた: {gameState.defen[0]}</div>
+
+            {/* 上家 */}
+            <div className="absolute left-3 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 3 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 3 ? 'text-yellow-400' : 'text-gray-300'}`}>上家</span>
+              </div>
+              <span className="text-gray-200 text-sm font-bold">{gameState.defen[3]}</span>
+            </div>
+
+            {/* 下家 */}
+            <div className="absolute right-3 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 1 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 1 ? 'text-yellow-400' : 'text-gray-300'}`}>下家</span>
+              </div>
+              <span className="text-gray-200 text-sm font-bold">{gameState.defen[1]}</span>
+            </div>
+
+            {/* あなた */}
+            <div className="absolute bottom-4 flex flex-col items-center">
+              <div className="flex items-center gap-1 mb-0.5">
+                {gameState.oyaId === 0 && <span className="bg-red-600 text-white text-[10px] px-1 rounded">親</span>}
+                <span className={`text-sm font-bold ${gameState.oyaId === 0 ? 'text-yellow-400' : 'text-white'}`}>あなた</span>
+              </div>
+              <span className="text-white text-lg font-bold">{gameState.defen[0]}</span>
+            </div>
+
+            {/* Center Info */}
+            <div className="flex flex-col items-center text-green-700/50 text-xs font-bold pointer-events-none">
+              MAHJONG
+            </div>
           </div>
-          <div className="col-start-3 row-start-2 bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
+          <div className="bg-green-800 p-2 rounded flex flex-wrap gap-1 min-w-[4rem] min-h-[4rem] transform rotate-90 origin-center">
             {gameState.kawa.shimocha?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md transform -rotate-90">
+              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm shadow-md transform -rotate-90 text-3xl">
                 {tileToText(t)}
               </div>
             ))}
@@ -414,7 +463,7 @@ export default function Home() {
         <div className="w-full flex justify-center mb-8">
            <div className="bg-green-800 p-2 rounded flex flex-wrap max-w-lg gap-1 min-h-[4rem]">
             {gameState.kawa.player?.map((t, i) => (
-              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm font-bold shadow-md">
+              <div key={i} className="w-8 h-12 bg-gray-200 text-black flex items-center justify-center rounded-sm shadow-md text-3xl">
                 {tileToText(t)}
               </div>
             ))}
@@ -431,7 +480,7 @@ export default function Home() {
                   title={getUkeireTooltip(t)}
                   onClick={() => handleDiscard(t)}
                   disabled={!gameState.tsumo || isEvaluating}
-                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
+                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md shadow-lg transition-transform hover:-translate-y-2 relative group text-5xl leading-none
                     ${advice?.recommendedDiscard === t ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
                       advice?.dangerousTiles?.includes(t) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
                     ${(!gameState.tsumo || isEvaluating) ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
@@ -451,7 +500,7 @@ export default function Home() {
                   title={getUkeireTooltip(gameState.tsumo)}
                   onClick={() => handleDiscard(gameState.tsumo!)}
                   disabled={isEvaluating}
-                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md font-bold shadow-lg transition-transform hover:-translate-y-2 relative group
+                  className={`w-12 h-16 text-black flex items-center justify-center rounded-md shadow-lg transition-transform hover:-translate-y-2 relative group text-5xl leading-none
                     ${advice?.recommendedDiscard === gameState.tsumo ? 'bg-blue-300 border-2 border-blue-500 animate-pulse z-10' : 
                       advice?.dangerousTiles?.includes(gameState.tsumo) ? 'bg-red-300 border-2 border-red-500 text-red-900 z-10' : 'bg-gray-100'}
                     ${isEvaluating ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
@@ -537,8 +586,41 @@ export default function Home() {
                 </div>
               </div>
 
+              {advice.evData && advice.evData.length > 0 && (
+                <div className="bg-gray-800 border border-gray-700 p-5 rounded-xl">
+                  <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2">
+                    📊 外部AI 期待値(EV)
+                  </h3>
+                  <div className="space-y-3">
+                    {advice.evData.map((evItem: any, idx: number) => {
+                      const maxEv = Math.max(15, advice.evData[0].ev);
+                      const pct = Math.min(100, Math.max(0, (evItem.ev / maxEv) * 100));
+                      return (
+                        <div key={idx} className="flex items-center gap-3">
+                           <div className="w-12 text-center text-xl bg-gray-200 text-black rounded-sm py-1 shadow-sm font-bold">
+                             {tileToText(evItem.tile)}
+                           </div>
+                           <div className="flex-1">
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className={idx === 0 ? "text-blue-400 font-bold" : "text-gray-400"}>EV: {evItem.ev.toFixed(2)}</span>
+                                {idx === 0 && <span className="text-blue-400 font-bold">Best</span>}
+                              </div>
+                              <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-1000 ${idx === 0 ? 'bg-blue-500' : 'bg-gray-500'}`}
+                                  style={{ width: `${pct}%` }}
+                                ></div>
+                              </div>
+                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-gray-800 border border-gray-700 p-5 rounded-xl">
-                <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">理由</h3>
+                <h3 className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">Gemini解説</h3>
                 <p className="text-gray-100 leading-relaxed text-sm whitespace-pre-wrap">
                   {advice.reason}
                 </p>
