@@ -1,0 +1,10 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0.0
+
+# 本格的な牌効率計算ライブラリ
+mahjong>=1.1.11
+
+# Mortal統合時に追加（モデルファイルが揃い次第）
+# torch>=2.0.0
+# mortal  # pip install mortal (GitHubリリースから取得)
