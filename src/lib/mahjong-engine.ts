@@ -28,6 +28,7 @@ export interface GameState {
   zhuangfeng: string; // 場風 (e.g., "東")
   menfeng: string;    // 自風 (e.g., "南")
   oyaId: number;      // 現在の親プレイヤーID (0=あなた,1=下家,2=対面,3=上家)
+  isRiichiPending: boolean;
 }
 
 // Convert Shoupai string (e.g. "m123p45s6z1") to array of individual tiles
@@ -149,18 +150,32 @@ export class HumanPlayer extends Player {
   }
 
   public pendingOptions: { type: string, m?: string }[] | null = null;
+  public isRiichiPending: boolean = false;
 
   action_zimo(zimo: any, gangzimo: boolean) {
+    this.pendingOptions = null;
     if (zimo.l !== this._menfeng) {
       if (this._callback) this._callback();
       this.updateStateCallback();
       return;
     }
 
+    const options: { type: string, m?: string }[] = [];
+
     // Check if Human can Tsumo
     const canHule = this.allow_hule(this.shoupai, null, gangzimo);
     if (canHule) {
-       this.pendingOptions = [{ type: 'hule' }];
+       options.push({ type: 'hule' });
+    }
+
+    // Check if Human can Riichi
+    const canLizhi = this.allow_lizhi(this.shoupai);
+    if (canLizhi) {
+      options.push({ type: 'lizhi' });
+    }
+
+    if (options.length > 0) {
+      this.pendingOptions = options;
     }
 
     // Human Turn: do NOT call this._callback() automatically.
@@ -168,6 +183,7 @@ export class HumanPlayer extends Player {
   }
 
   action_dapai(dapai: any) {
+    this.pendingOptions = null;
     if (dapai.l === this._menfeng) {
       if (this._callback) this._callback();
       this.updateStateCallback();
@@ -208,11 +224,16 @@ export class HumanPlayer extends Player {
   }
 
   userDiscard(p: string) {
+    let discard = p;
+    if (this.isRiichiPending) {
+      discard += '*';
+      this.isRiichiPending = false;
+    }
     this.pendingOptions = null;
     if (this._callback) {
       const cb = this._callback;
       this._callback = null;
-      cb({ dapai: p });
+      cb({ dapai: discard });
     }
   }
 
@@ -222,7 +243,15 @@ export class HumanPlayer extends Player {
       const cb = this._callback;
       this._callback = null;
       if (actionType === 'hule') cb({ hule: '-' });
-      else if (actionType === 'skip') cb();
+      else if (actionType === 'lizhi') {
+        this.isRiichiPending = true;
+        // Don't call callback yet, wait for discard
+        this.updateStateCallback();
+      }
+      else if (actionType === 'skip') {
+        this.isRiichiPending = false;
+        cb();
+      }
       else cb({ fulou: m });
     }
   }
@@ -343,6 +372,7 @@ export class MahjongEngine {
       zhuangfeng,
       menfeng: ["東", "南", "西", "北"][humanMenfeng] || "東",
       oyaId: oyaRelativeId, // 0=あなた, 1=下家, 2=対面, 3=上家
+      isRiichiPending: (this.humanPlayer as any).isRiichiPending || false,
     };
   }
 }

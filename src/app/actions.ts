@@ -2,7 +2,6 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
-// API v1 を明示的に指定してみる
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
@@ -10,9 +9,10 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
  */
 function tileToJapanese(tile: string): string {
   if (!tile) return "";
-  const suit = tile[0];
-  const num = parseInt(tile[1]);
-  if (isNaN(num)) return tile;
+  const t = tile.replace(/_|\*/g, "");
+  const suit = t[0];
+  const num = parseInt(t[1]);
+  if (isNaN(num)) return t;
 
   const suitName: Record<string, string> = {
     m: "萬子",
@@ -25,7 +25,7 @@ function tileToJapanese(tile: string): string {
       1: "東", 2: "南", 3: "西", 4: "北",
       5: "白", 6: "發", 7: "中"
     };
-    return honorName[num] || tile;
+    return honorName[num] || t;
   }
 
   const numMap = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
@@ -137,16 +137,13 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
 }
 ※ 重要：evData内の「tile」フィールドの値は、絶対に日本語に変換せず、元の記号のまま保持してください。`;
 
-  // 試行するモデルのリスト（Google AI Studio確認済みモデル）
-  const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const modelNames = ["gemini-1.5-flash", "gemini-2.0-flash"];
   
   for (const modelName of modelNames) {
     try {
       const model = genAI.getGenerativeModel({
         model: modelName,
-        generationConfig: {
-          responseMimeType: "application/json", // JSON出力を強制
-        },
+        generationConfig: { responseMimeType: "application/json" },
         safetySettings: [
           { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
           { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -156,8 +153,9 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
       });
 
       const result = await model.generateContent(prompt);
-      const resultText = result.response.text();
+      let resultText = result.response.text();
       
+      // JSONを抽出してパース
       let cleanText = resultText.trim();
       const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
       if (jsonMatch) cleanText = jsonMatch[0];
@@ -172,26 +170,50 @@ ${externalAnalysis.slice(0, 5).map((e: any) => `  - 打 ${tileToJapanese(e.tile)
 
   return {
     recommendedDiscard: externalAnalysis[0]?.tile || "",
-    reason: "Gemini解析中にエラーが発生しました。APIキーの権限またはリージョン設定を確認してください。",
+    reason: "Gemini解析中にエラーが発生しました。",
     targetYaku: [],
     evData: externalAnalysis.slice(0, 3),
     engineName
   };
 }
 
-
 export async function getGameReview(logs: any[], finalState: any) {
-  const prompt = `あなたはプロ麻雀解説者です。ログを分析し、JSONで評価してください。
-ログ: ${JSON.stringify(logs)}`;
+  // ログが長すぎる場合は後半部分を優先して抽出
+  const maxLogs = 50;
+  const recentLogs = logs.slice(-maxLogs);
+
+  const prompt = `あなたはプロ麻雀解説者です。以下の対局ログ（直近${recentLogs.length}手）を分析し、ユーザーの打牌を評価してください。
+AIの推奨打牌との一致率（0-100）と、全体的な総括を日本語で出力してください。
+
+【出力フォーマット】
+以下のJSON形式のみで出力してください。
+{
+  "matchRate": 85,
+  "reviewText": "今回の対局では、中盤までの手作りが非常に正確でした。特に... という点が素晴らしかったです。一方で終盤の... という選択は改善の余地があります。"
+}
+
+【対局ログ】
+${JSON.stringify(recentLogs)}`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: { responseMimeType: "application/json" }
+    });
     const result = await model.generateContent(prompt);
-    let cleanText = result.response.text().trim();
+    let resultText = result.response.text();
+    
+    let cleanText = resultText.trim();
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (jsonMatch) cleanText = jsonMatch[0];
-    return JSON.parse(cleanText);
+    
+    const parsed = JSON.parse(cleanText);
+    return {
+      matchRate: parsed.matchRate ?? 0,
+      reviewText: parsed.reviewText || "レビューデータが不完全です。"
+    };
   } catch (err) {
-    return { matchRate: 0, reviewText: "レビューの生成に失敗しました。" };
+    console.error("Game Review Error:", err);
+    return { matchRate: 0, reviewText: "対局レビューの生成中にエラーが発生しました。" };
   }
 }

@@ -3,15 +3,20 @@
 import { useState, useEffect, useRef } from "react";
 import { getMahjongAdvice, getGameReview } from "./actions";
 import { MahjongEngine, GameState } from "@/lib/mahjong-engine";
-import { YakuListTab } from "@/components/YakuListTab";
-import { AdviceTab } from "@/components/AdviceTab";
-import { SujiTab } from "@/components/SujiTab";
+import { YakuListTab } from "../components/YakuListTab";
+import { AdviceTab } from "../components/AdviceTab";
+import { SujiTab } from "../components/SujiTab";
 
 const getTileImageUrl = (tile: string) => {
   if (!tile) return "/images/tiles/back.svg";
   const t = tile.replace(/_|\*/g, ""); 
   if (t === "?") return "/images/tiles/back.svg";
   return `/images/tiles/${t}.svg`;
+};
+
+const getTileRiichiStyle = (isPending: boolean) => {
+  if (!isPending) return '';
+  return 'ring-4 ring-orange-500 shadow-orange-500/50 scale-110 z-20';
 };
 
 /** **bold** マークアップをインライン <strong> に変換するヘルパー */
@@ -488,6 +493,11 @@ export default function Home() {
           <div className="text-sm font-semibold text-blue-300">
             {gameState.currentShanten === 0 ? 'テンパイ' : gameState.currentShanten === -1 ? 'アガリ' : `${gameState.currentShanten}シャンテン`}
           </div>
+          {gameState.isRiichiPending && (
+            <div className="text-lg font-black text-orange-400 animate-bounce mt-2 flex items-center gap-2">
+              <span>🔥</span> リーチ宣言牌を選択してください
+            </div>
+          )}
         </div>
 
         {/* Naki (Pending Actions) Dialog */}
@@ -498,7 +508,8 @@ export default function Home() {
                 chi: 'チー',
                 peng: 'ポン',
                 gang: 'カン',
-                hule: 'ロン / ツモ'
+                hule: 'ロン / ツモ',
+                lizhi: 'リーチ'
               };
               const label = actionLabels[action.type] || action.type;
               return (
@@ -610,9 +621,13 @@ export default function Home() {
                       advice?.dangerousTiles?.includes(t) ? 'ring-4 ring-red-500 shadow-red-500/50 z-10' : ''}
                     ${(!gameState.tsumo || isEvaluating) ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
                     ${pendingDiscard === t && isEvaluating ? 'ring-4 ring-yellow-400 opacity-80' : ''}
+                    ${getTileRiichiStyle(gameState.isRiichiPending)}
                   `}
                 >
                   <img src={getTileImageUrl(t)} alt={tileToText(t)} className="w-full h-full object-fill p-1" />
+                  {gameState.isRiichiPending && (
+                    <div className="absolute inset-0 bg-orange-500/20 rounded-md pointer-events-none"></div>
+                  )}
                   {isCorrectionMode && gameState.tsumo && !isEvaluating && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   )}
@@ -630,9 +645,13 @@ export default function Home() {
                       advice?.dangerousTiles?.includes(gameState.tsumo) ? 'ring-4 ring-red-500 shadow-red-500/50 z-10' : ''}
                     ${isEvaluating ? 'opacity-90 cursor-not-allowed hover:translate-y-0' : ''}
                     ${pendingDiscard === gameState.tsumo && isEvaluating ? 'ring-4 ring-yellow-400 opacity-80' : ''}
+                    ${getTileRiichiStyle(gameState.isRiichiPending)}
                   `}
                 >
                   <img src={getTileImageUrl(gameState.tsumo)} alt={tileToText(gameState.tsumo)} className="w-full h-full object-fill p-1" />
+                  {gameState.isRiichiPending && (
+                    <div className="absolute inset-0 bg-orange-500/20 rounded-md pointer-events-none"></div>
+                  )}
                   {isCorrectionMode && !isEvaluating && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   )}
